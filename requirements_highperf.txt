@@ -1,0 +1,18 @@
+Flask==3.0.0
+flask-cors==4.0.0
+
+# High-performance packet processing
+# Note: DPDK Python bindings require manual installation
+# See PERFORMANCE_GUIDE.md for instructions
+
+# Alternative high-performance libraries
+scapy==2.5.0
+
+# For hardware timestamp support (Linux only)
+# Uses native Python socket extensions
+
+# Performance monitoring
+psutil==5.9.6
+
+# Multiprocessing and shared memory
+# (built-in to Python 3.8+)
