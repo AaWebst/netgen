@@ -21,6 +21,7 @@ from traffic_engine_unified import (
     TrafficProfile,
     InterfaceType
 )
+from neighbor_discovery import neighbor_discovery
 
 app = Flask(__name__, static_folder='web')
 CORS(app)
@@ -506,14 +507,15 @@ def get_rfc2544_results(profile_name):
 def get_system_status():
     """Get overall system status"""
     with engine_lock:
+        stats = engine.get_stats()
         status = {
             'running': engine.running,
             'num_interfaces': len(engine.interfaces),
             'num_profiles': len(engine.traffic_profiles),
             'active_profiles': sum(1 for p in engine.traffic_profiles.values() if p.enabled),
-            'total_tx_packets': sum(s['tx_packets'] for s in engine.stats.values()),
-            'total_tx_bytes': sum(s['tx_bytes'] for s in engine.stats.values()),
-            'total_dropped': sum(s['dropped_packets'] for s in engine.stats.values())
+            'total_tx_packets': sum(s.get('tx_packets', 0) for s in stats.values()),
+            'total_tx_bytes': sum(s.get('tx_bytes', 0) for s in stats.values()),
+            'total_dropped': sum(s.get('dropped', 0) for s in stats.values())
         }
         
     return jsonify({
@@ -569,6 +571,68 @@ def initialize_default_config():
     except Exception as e:
         logger.warning(f"Could not fully initialize interfaces: {e}")
         logger.info("This is normal if running outside actual hardware environment")
+
+
+@app.route('/api/neighbors/discover', methods=['POST'])
+def discover_neighbors():
+    """Discover neighbors on specified interfaces"""
+    try:
+        data = request.json
+        interfaces = data.get('interfaces', [])
+        
+        if not interfaces:
+            # Discover all interfaces
+            interfaces = list(engine.interfaces.keys())
+        
+        results = neighbor_discovery.discover_all_interfaces(interfaces)
+        
+        return jsonify({
+            'success': True,
+            'neighbors': results
+        })
+    
+    except Exception as e:
+        logger.error(f"Neighbor discovery error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/neighbors/<interface_name>', methods=['GET'])
+def get_neighbors(interface_name):
+    """Get cached neighbor information for an interface"""
+    try:
+        if interface_name not in engine.interfaces:
+            return jsonify({
+                'success': False,
+                'error': 'Interface not found'
+            }), 404
+        
+        # Get cached scan or perform new scan
+        if interface_name in neighbor_discovery.last_scan:
+            result = neighbor_discovery.last_scan[interface_name]
+        else:
+            result = neighbor_discovery.discover_interface(interface_name)
+        
+        # Get best neighbor info for display
+        neighbor_info = neighbor_discovery.get_best_neighbor_info(interface_name)
+        
+        return jsonify({
+            'success': True,
+            'interface': interface_name,
+            'neighbor_info': neighbor_info,
+            'arp_neighbors': result.get('arp_neighbors', []),
+            'lldp_neighbors': result.get('lldp_neighbors', []),
+            'link_status': result.get('link_status', {})
+        })
+    
+    except Exception as e:
+        logger.error(f"Get neighbors error: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':
