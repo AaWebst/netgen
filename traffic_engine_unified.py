@@ -170,17 +170,32 @@ class PacketMemPool:
         self.packet_size = packet_size
         self.pool_size = num_packets * packet_size
         
-        # Try huge pages first
+        # Try huge pages first (if available)
         try:
-            self.memory = mmap.mmap(-1, self.pool_size,
-                                   flags=mmap.MAP_SHARED | mmap.MAP_ANONYMOUS | mmap.MAP_HUGETLB,
-                                   prot=mmap.PROT_READ | mmap.PROT_WRITE)
-            logger.debug(f"Allocated {self.pool_size} bytes using huge pages")
-        except OSError:
-            self.memory = mmap.mmap(-1, self.pool_size,
-                                   flags=mmap.MAP_SHARED | mmap.MAP_ANONYMOUS,
-                                   prot=mmap.PROT_READ | mmap.PROT_WRITE)
-            logger.debug(f"Allocated {self.pool_size} bytes using regular pages")
+            # MAP_HUGETLB may not be available on all systems
+            MAP_HUGETLB = getattr(mmap, 'MAP_HUGETLB', 0x40000)  # 0x40000 is the constant value
+            
+            if MAP_HUGETLB:
+                try:
+                    self.memory = mmap.mmap(-1, self.pool_size,
+                                           flags=mmap.MAP_SHARED | mmap.MAP_ANONYMOUS | MAP_HUGETLB,
+                                           prot=mmap.PROT_READ | mmap.PROT_WRITE)
+                    logger.debug(f"Allocated {self.pool_size} bytes using huge pages")
+                    self.free_packets = Queue(maxsize=num_packets)
+                    for i in range(num_packets):
+                        self.free_packets.put(i)
+                    return
+                except OSError as e:
+                    logger.debug(f"Huge pages allocation failed ({e}), falling back to regular pages")
+            
+        except Exception as e:
+            logger.debug(f"Huge pages not supported ({e}), using regular pages")
+        
+        # Fallback to regular pages
+        self.memory = mmap.mmap(-1, self.pool_size,
+                               flags=mmap.MAP_SHARED | mmap.MAP_ANONYMOUS,
+                               prot=mmap.PROT_READ | mmap.PROT_WRITE)
+        logger.debug(f"Allocated {self.pool_size} bytes using regular pages")
         
         self.free_packets = Queue(maxsize=num_packets)
         for i in range(num_packets):
