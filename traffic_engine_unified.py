@@ -548,6 +548,53 @@ class UnifiedTrafficEngine:
         logger.info(f"Added profile {profile.name}: {profile.bandwidth_mbps}Mbps "
                    f"({profile.src_interface} → {profile.dst_interface})")
     
+    def get_interface_status(self) -> Dict:
+        """Get status of all interfaces (API compatibility method)"""
+        status = {}
+        for name, interface in self.interfaces.items():
+            status[name] = {
+                'name': name,
+                'mac_address': interface.config.mac_address,
+                'ip_address': interface.config.ip_address,
+                'subnet_mask': interface.config.subnet_mask,
+                'gateway': interface.config.gateway,
+                'interface_type': interface.config.interface_type.value,
+                'speed_mbps': interface.config.speed_mbps,
+                'discovered_hosts': interface.config.discovered_hosts
+            }
+        return status
+    
+    def get_traffic_stats(self) -> Dict:
+        """Get traffic statistics for all profiles (API compatibility method)"""
+        stats = {}
+        for name, profile in self.traffic_profiles.items():
+            # Get interface stats
+            src_iface = self.interfaces.get(profile.src_interface)
+            dst_iface = self.interfaces.get(profile.dst_interface)
+            
+            src_stats = src_iface.get_stats() if src_iface else {}
+            dst_stats = dst_iface.get_stats() if dst_iface else {}
+            
+            stats[name] = {
+                'profile_name': name,
+                'enabled': profile.enabled,
+                'src_interface': profile.src_interface,
+                'dst_interface': profile.dst_interface,
+                'bandwidth_mbps': profile.bandwidth_mbps,
+                'tx_packets': src_stats.get('tx_packets', 0),
+                'tx_bytes': src_stats.get('tx_bytes', 0),
+                'rx_packets': dst_stats.get('rx_packets', 0),
+                'rx_bytes': dst_stats.get('rx_bytes', 0),
+                'dropped': src_stats.get('dropped', 0),
+                'running': self.running and profile.enabled
+            }
+        return stats
+    
+    @property
+    def stats(self) -> Dict:
+        """Property for backwards compatibility"""
+        return self.get_stats()
+    
     def start_traffic(self):
         """Start all enabled traffic profiles"""
         self.running = True
