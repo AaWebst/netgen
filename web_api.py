@@ -525,6 +525,9 @@ def get_system_status():
 def initialize_default_config():
     """Initialize with default configuration: 5 copper LANs + 2 SFP 10G ports"""
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Add 5 copper LAN ports (eth1-eth5) - 1G, optimized mode
     for i in range(1, 6):
         config = InterfaceConfig(
