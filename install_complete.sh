@@ -180,26 +180,30 @@ if systemctl is-active --quiet NetworkManager; then
     
 elif [ -d "/etc/netplan" ]; then
     echo "Using Netplan..."
-    cat > /etc/netplan/99-vep1445-dhcp.yaml << 'EOF'
-network:
+    
+    # Build complete netplan config in memory first
+    NETPLAN_CONFIG="network:
   version: 2
   renderer: networkd
-  ethernets:
-EOF
+  ethernets:"
     
     for iface in "${INTERFACES[@]}"; do
         if ip link show "$iface" &>/dev/null; then
-            cat >> /etc/netplan/99-vep1445-dhcp.yaml << EOF
-    $iface:
+            NETPLAN_CONFIG="${NETPLAN_CONFIG}
+    ${iface}:
       dhcp4: true
       dhcp6: false
       dhcp4-overrides:
-        use-dns: false
-EOF
-            echo "  ✓ $iface added to netplan"
+        use-dns: false"
+            echo "  ✓ $iface will be configured"
         fi
     done
     
+    # Write complete config at once
+    echo "$NETPLAN_CONFIG" > /etc/netplan/99-vep1445-dhcp.yaml
+    chmod 600 /etc/netplan/99-vep1445-dhcp.yaml
+    
+    echo "  ✓ Netplan configuration created"
     netplan apply
 fi
 
