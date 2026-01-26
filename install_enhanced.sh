@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# VEP1445 Enhanced All-in-One Installer
+# VEP1445 Enhanced All-in-One Installer (Fixed for Ubuntu 22.04)
 # - DHCP enabled by default
 # - Auto-generates traffic profiles between networks
 # - Detects IPs and creates inter-LAN traffic flows
@@ -78,8 +78,26 @@ echo ""
 apt-get update -qq
 apt-get install -y python3 python3-pip ethtool iproute2 lldpd
 
-# Install Python packages
-pip3 install flask scapy psutil --break-system-packages
+# Install Python packages with pip version detection
+echo "Installing Python packages..."
+
+# Check pip version and use appropriate method
+PIP_VERSION=$(pip3 --version | grep -oP 'pip \K[0-9]+' || echo "0")
+
+if [ "$PIP_VERSION" -ge 23 ]; then
+    # Newer pip (23+) requires --break-system-packages
+    echo "  Using pip $PIP_VERSION (with --break-system-packages)"
+    pip3 install flask scapy psutil --break-system-packages
+elif command -v apt-get &>/dev/null; then
+    # Ubuntu 22.04 - use apt for system packages
+    echo "  Using apt for system packages (Ubuntu 22.04 compatible)"
+    apt-get install -y python3-flask python3-scapy python3-psutil
+else
+    # Fallback - try pip without break-system-packages
+    echo "  Using pip $PIP_VERSION (standard install)"
+    pip3 install flask scapy psutil || \
+    pip3 install --user flask scapy psutil
+fi
 
 echo "  ✓ Dependencies installed"
 echo ""
@@ -98,8 +116,8 @@ mkdir -p "$INSTALL_DIR/web"
 mkdir -p /var/log/vep1445
 
 # Copy all files from current directory
-cp -r "$SCRIPT_DIR"/*.py "$INSTALL_DIR/" 2>/dev/null || true
-cp -r "$SCRIPT_DIR"/web/* "$INSTALL_DIR/web/" 2>/dev/null || true
+cp "$SCRIPT_DIR"/*.py "$INSTALL_DIR/" 2>/dev/null || true
+cp "$SCRIPT_DIR"/web/* "$INSTALL_DIR/web/" 2>/dev/null || true
 cp "$SCRIPT_DIR"/*.json "$INSTALL_DIR/" 2>/dev/null || true
 cp "$SCRIPT_DIR"/*.txt "$INSTALL_DIR/" 2>/dev/null || true
 cp "$SCRIPT_DIR"/*.sh "$INSTALL_DIR/" 2>/dev/null || true
@@ -185,11 +203,14 @@ echo "Bringing up interfaces and requesting DHCP..."
 for iface in "${INTERFACES[@]}"; do
     if ip link show "$iface" &>/dev/null; then
         ip link set "$iface" up
-        dhclient -v "$iface" &>/dev/null &
+        if command -v dhclient &>/dev/null; then
+            dhclient -v "$iface" &>/dev/null &
+        fi
     fi
 done
 
-sleep 5
+echo "Waiting for DHCP leases (10 seconds)..."
+sleep 10
 
 echo ""
 echo "Detected IP Addresses:"
@@ -197,8 +218,8 @@ echo "────────────────────────�
 declare -A INTERFACE_IPS
 for iface in "${INTERFACES[@]}"; do
     if ip link show "$iface" &>/dev/null; then
-        IP=$(ip -4 addr show "$iface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
-        MAC=$(ip link show "$iface" | grep -oP '(?<=link/ether )[^ ]+')
+        IP=$(ip -4 addr show "$iface" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "")
+        MAC=$(ip link show "$iface" 2>/dev/null | grep -oP '(?<=link/ether )[^ ]+' || echo "")
         
         if [ -n "$IP" ]; then
             echo "  ✅ $iface: $IP (MAC: $MAC)"
@@ -220,6 +241,7 @@ echo "════════════════════════�
 echo ""
 
 cat > "$INSTALL_DIR/auto_config.py" << 'PYEOF'
+#!/usr/bin/env python3
 """
 VEP1445 Auto-Configuration Module
 Automatically detects IPs on interfaces and creates traffic profiles
@@ -358,7 +380,7 @@ def save_auto_config(config_path: str = '/opt/vep1445-traffic-gen/auto_config.js
         return False
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
     interfaces = get_all_interfaces()
     
     print("Detected Interfaces:")
@@ -374,7 +396,7 @@ if __name__ == '__main__':
         print(f"  {profile['name']}: {profile['source_ip']} -> {profile['dest_ip']}")
     
     if save_auto_config():
-        print("\n✓ Auto-configuration saved")
+        print("\n✓ Auto-configuration saved to /opt/vep1445-traffic-gen/auto_config.json")
 PYEOF
 
 chmod +x "$INSTALL_DIR/auto_config.py"
@@ -382,22 +404,37 @@ echo "  ✓ Auto-configuration module created"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════
-# STEP 6: Update web_api.py to Use DHCP and Auto-Profiles
+# STEP 6: Generate Initial Auto-Config
 # ═══════════════════════════════════════════════════════════════
 
 echo "═══════════════════════════════════════════════════════════════"
-echo " Step 6: Updating VEP1445 for DHCP and Auto-Profiles"
+echo " Step 6: Generating Auto-Configuration"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# Backup original web_api.py
-cp "$INSTALL_DIR/web_api.py" "$INSTALL_DIR/web_api.py.backup-dhcp" 2>/dev/null || true
+cd "$INSTALL_DIR"
+python3 auto_config.py
 
-# Update initialize_default_config function
-python3 << 'PYEOF'
+echo ""
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 7: Update web_api.py to Use DHCP and Auto-Profiles
+# ═══════════════════════════════════════════════════════════════
+
+echo "═══════════════════════════════════════════════════════════════"
+echo " Step 7: Updating VEP1445 for DHCP and Auto-Profiles"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+if [ -f "$INSTALL_DIR/web_api.py" ]; then
+    # Backup original web_api.py
+    cp "$INSTALL_DIR/web_api.py" "$INSTALL_DIR/web_api.py.backup-dhcp" 2>/dev/null || true
+    
+    # Update initialize_default_config function
+    python3 << PYEOF
 import re
 
-web_api_path = '/opt/vep1445-traffic-gen/web_api.py'
+web_api_path = '$INSTALL_DIR/web_api.py'
 
 try:
     with open(web_api_path, 'r') as f:
@@ -414,7 +451,7 @@ new_init = '''def initialize_default_config():
     logger = logging.getLogger(__name__)
     
     # Add auto_config to path
-    sys.path.insert(0, '/opt/vep1445-traffic-gen')
+    sys.path.insert(0, '$INSTALL_DIR')
     from auto_config import get_all_interfaces, generate_auto_profiles, save_auto_config
     
     # Get interfaces with real IPs from DHCP
@@ -454,12 +491,11 @@ new_init = '''def initialize_default_config():
         logger.info(f"Auto-generated {len(auto_profiles)} traffic profiles")
         for profile_config in auto_profiles:
             try:
-                # Create the profile but keep it disabled
-                # User can enable in GUI when ready
+                # Log the auto-profile creation
                 logger.info(f"  - {profile_config['name']}: "
                           f"{profile_config['source_ip']} -> {profile_config['dest_ip']}")
             except Exception as e:
-                logger.error(f"Failed to create auto-profile: {e}")
+                logger.error(f"Failed to log auto-profile: {e}")
         
         # Save auto-config for reference
         save_auto_config()
@@ -476,22 +512,12 @@ with open(web_api_path, 'w') as f:
 
 print("  ✓ web_api.py updated for DHCP and auto-profiles")
 PYEOF
-
-echo ""
-
-# ═══════════════════════════════════════════════════════════════
-# STEP 7: Generate Initial Auto-Config
-# ═══════════════════════════════════════════════════════════════
-
-echo "═══════════════════════════════════════════════════════════════"
-echo " Step 7: Generating Auto-Configuration"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-
-cd "$INSTALL_DIR"
-python3 auto_config.py
-
-echo ""
+    
+    echo ""
+else
+    echo "  ⚠️  web_api.py not found at $INSTALL_DIR"
+    echo ""
+fi
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 8: Create Systemd Service (if system install)
@@ -559,7 +585,7 @@ echo "────────────────────────�
 IP_COUNT=0
 for iface in "${INTERFACES[@]}"; do
     if ip link show "$iface" &>/dev/null; then
-        IP=$(ip -4 addr show "$iface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+        IP=$(ip -4 addr show "$iface" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "")
         if [ -n "$IP" ]; then
             echo "  ✅ $iface: $IP (DHCP)"
             IP_COUNT=$((IP_COUNT + 1))
@@ -635,8 +661,8 @@ echo ""
 if [ $IP_COUNT -ge 2 ]; then
     echo "🎉 READY TO GENERATE TRAFFIC!"
     echo ""
-    echo "Your VEP1445 has detected $IP_COUNT networks and created"
-    echo "$PROFILE_COUNT bidirectional traffic profiles automatically."
+    echo "Your VEP1445 has detected $IP_COUNT networks and auto-generated"
+    echo "$PROFILE_COUNT bidirectional traffic profiles."
     echo ""
     echo "Simply enable the profiles in the web GUI and start traffic!"
 else
