@@ -444,7 +444,21 @@ web_api_path = '/opt/vep1445-traffic-gen/web_api.py'
 with open(web_api_path, 'r') as f:
     content = f.read()
 
-# Complete initialize function with ACTUAL profile loading (not just logging!)
+# Find what field names TrafficProfile actually uses
+if 'src_interface' in content and 'dst_interface' in content:
+    # Uses src_interface, dst_interface, dst_ip
+    field_mapping = {
+        'source': 'src',
+        'dest': 'dst',
+        'destination': 'dst'
+    }
+    print("  ℹ️  Detected API uses: src_interface, dst_interface, dst_ip")
+else:
+    # Uses source_interface, destination_interface
+    field_mapping = None
+    print("  ℹ️  Detected API uses: source_interface, destination_interface")
+
+# Complete initialize function with CORRECT field names
 new_init = '''def initialize_default_config():
     """Initialize with DHCP-enabled interfaces and auto-load profiles"""
     import logging
@@ -476,42 +490,42 @@ new_init = '''def initialize_default_config():
             if iface_info['has_ip']:
                 logger.info(f"Added {iface_info['name']}: MAC={iface_info['mac']}, IP={iface_info['ip']} (DHCP)")
             else:
-                logger.info(f"Added {iface_info['name']}: MAC={iface_info['mac']}, IP=None (no DHCP)")
+                logger.info(f"Added {iface_info['name']}: MAC={iface_info['mac']}, IP=None")
             
         except Exception as e:
             logger.error(f"Failed to add interface {iface_info['name']}: {e}")
     
-    logger.info(f"Initialized {interfaces_added} interfaces (DHCP enabled)")
+    logger.info(f"Initialized {interfaces_added} interfaces")
     
-    # Generate auto-profiles and save to JSON
+    # Generate and LOAD auto-profiles
     auto_profiles = generate_auto_profiles(interfaces)
     if auto_profiles:
         logger.info(f"Auto-generated {len(auto_profiles)} traffic profiles")
         save_auto_config()
         
-        # NOW LOAD THEM INTO THE ENGINE (this was missing!)
+        # LOAD profiles into engine with CORRECT field names
         profiles_loaded = 0
-        for profile_config in auto_profiles:
+        for p in auto_profiles:
             try:
-                # CRITICAL: CREATE the TrafficProfile object
+                # CRITICAL: Use correct field names for TrafficProfile
                 profile = TrafficProfile(
-                    name=profile_config['name'],
-                    source_interface=profile_config['source_interface'],
-                    destination_interface=profile_config['dest_interface'],
-                    bandwidth_mbps=profile_config['bandwidth_mbps'],
-                    packet_size=profile_config['packet_size'],
-                    protocol=profile_config['protocol']
+                    name=p['name'],
+                    src_interface=p['source_interface'],
+                    dst_interface=p['dest_interface'],
+                    dst_ip=p['dest_ip'],
+                    bandwidth_mbps=p['bandwidth_mbps'],
+                    packet_size=p['packet_size'],
+                    protocol=p['protocol']
                 )
                 
-                # CRITICAL: ADD to engine (makes it visible in GUI!)
                 engine.add_traffic_profile(profile)
                 profiles_loaded += 1
                 
-                logger.info(f"  ✓ LOADED into engine: {profile_config['name']}: {profile_config['source_ip']} -> {profile_config['dest_ip']}")
+                logger.info(f"  ✓ LOADED: {p['name']}: {p['source_ip']} -> {p['dest_ip']}")
             except Exception as e:
-                logger.error(f"Failed to load profile {profile_config['name']}: {e}")
+                logger.error(f"Failed to load {p['name']}: {e}")
         
-        logger.info(f"✅ Successfully loaded {profiles_loaded}/{len(auto_profiles)} profiles - VISIBLE IN GUI!")
+        logger.info(f"✅ Loaded {profiles_loaded}/{len(auto_profiles)} profiles into engine")
     else:
         logger.warning("No auto-profiles generated (need 2+ interfaces with IPs)")
 '''
@@ -524,9 +538,9 @@ if re.search(pattern, content, re.DOTALL):
     with open(web_api_path, 'w') as f:
         f.write(content)
     
-    print("  ✓ web_api.py FULLY FIXED - profiles will load into engine!")
+    print("  ✓ web_api.py FIXED with correct TrafficProfile field names!")
 else:
-    print("  ⚠️  Could not find initialize_default_config() - may need manual fix")
+    print("  ⚠️  Could not find initialize_default_config()")
 PYEOF
     echo ""
 else
