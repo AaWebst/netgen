@@ -1,0 +1,319 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                                ║
+║   PROFILES GENERATED BUT NOT IN GUI - IMMEDIATE FIX           ║
+║                                                                ║
+╚═══════════════════════════════════════════════════════════════╝
+
+SITUATION:
+═══════════════════════════════════════════════════════════════
+
+✓ auto_config.json EXISTS with 2 profiles
+✓ Profiles correctly defined:
+  - Auto_eno2_to_eno3 (24.1.6.142 → 24.1.1.139)
+  - Auto_eno3_to_eno2 (24.1.1.139 → 24.1.6.142)
+
+✗ Profiles NOT visible in GUI
+✗ web_api.py not loading them into engine
+
+═══════════════════════════════════════════════════════════════
+ 🚀 IMMEDIATE FIX (Choose One)
+═══════════════════════════════════════════════════════════════
+
+OPTION 1: Load Profiles via Script (Quick - 30 seconds)
+───────────────────────────────────────────────────────────────
+
+On your VEP1445:
+
+# 1. Create the loader script
+cd /opt/vep1445-traffic-gen
+cat > load_profiles_now.py << 'PYEOF'
+#!/usr/bin/env python3
+import json
+import requests
+import sys
+
+print("Loading auto-profiles into VEP1445...")
+
+# Read config
+with open('/opt/vep1445-traffic-gen/auto_config.json', 'r') as f:
+    config = json.load(f)
+
+profiles = config.get('auto_profiles', [])
+print(f"\nFound {len(profiles)} profiles to load\n")
+
+# Load each profile via API
+api_url = "http://localhost:5000/api/traffic-profiles"
+success = 0
+
+for p in profiles:
+    data = {
+        'name': p['name'],
+        'source_interface': p['source_interface'],
+        'destination_interface': p['dest_interface'],
+        'bandwidth_mbps': p['bandwidth_mbps'],
+        'packet_size': p['packet_size'],
+        'protocol': p['protocol'],
+        'enabled': False
+    }
+    
+    try:
+        r = requests.post(api_url, json=data, timeout=5)
+        if r.status_code in [200, 201]:
+            print(f"  ✓ {p['name']}: {p['source_ip']} -> {p['dest_ip']}")
+            success += 1
+        else:
+            print(f"  ✗ {p['name']}: HTTP {r.status_code}")
+    except Exception as e:
+        print(f"  ✗ {p['name']}: {e}")
+
+print(f"\n✅ Loaded {success}/{len(profiles)} profiles")
+print("\nRefresh your browser: http://localhost:5000")
+PYEOF
+
+# 2. Run it
+sudo python3 load_profiles_now.py
+
+# 3. Refresh browser
+# Go to http://localhost:5000 and refresh (Ctrl+F5)
+
+OPTION 2: Restart VEP1445 with Fixed Code (Permanent)
+───────────────────────────────────────────────────────────────
+
+This permanently fixes web_api.py to load profiles on startup:
+
+# 1. Backup current web_api.py
+cd /opt/vep1445-traffic-gen
+sudo cp web_api.py web_api.py.backup
+
+# 2. Fix the initialize_default_config function
+sudo python3 << 'PYEOF'
+import re
+
+with open('/opt/vep1445-traffic-gen/web_api.py', 'r') as f:
+    content = f.read()
+
+# Find and replace the initialize function
+fix = '''def initialize_default_config():
+    """Initialize with DHCP-enabled interfaces and auto-load profiles"""
+    import logging
+    import sys
+    import json
+    logger = logging.getLogger(__name__)
+    
+    sys.path.insert(0, '/opt/vep1445-traffic-gen')
+    from auto_config import get_all_interfaces, generate_auto_profiles
+    
+    # Add interfaces
+    interfaces = get_all_interfaces()
+    for iface_info in interfaces:
+        try:
+            config = InterfaceConfig(
+                name=iface_info['name'],
+                mac_address=iface_info['mac'],
+                ip_address=iface_info.get('ip'),
+                subnet_mask=iface_info.get('netmask'),
+                interface_type=InterfaceType.COPPER_OPTIMIZED,
+                speed_mbps=1000
+            )
+            engine.add_interface(config)
+            if iface_info['has_ip']:
+                logger.info(f"Added {iface_info['name']}: {iface_info['ip']}")
+        except Exception as e:
+            logger.error(f"Failed to add {iface_info['name']}: {e}")
+    
+    # Load auto-profiles from JSON
+    try:
+        with open('/opt/vep1445-traffic-gen/auto_config.json', 'r') as f:
+            auto_config = json.load(f)
+        
+        auto_profiles = auto_config.get('auto_profiles', [])
+        if auto_profiles:
+            logger.info(f"Loading {len(auto_profiles)} auto-profiles")
+            for p in auto_profiles:
+                try:
+                    profile = TrafficProfile(
+                        name=p['name'],
+                        source_interface=p['source_interface'],
+                        destination_interface=p['dest_interface'],
+                        bandwidth_mbps=p['bandwidth_mbps'],
+                        packet_size=p['packet_size'],
+                        protocol=p['protocol']
+                    )
+                    engine.add_traffic_profile(profile)
+                    logger.info(f"  ✓ Loaded: {p['name']}")
+                except Exception as e:
+                    logger.error(f"Failed to load {p['name']}: {e}")
+    except FileNotFoundError:
+        logger.warning("auto_config.json not found - no auto-profiles loaded")
+'''
+
+# Replace the function
+pattern = r'def initialize_default_config\(\):.*?(?=\ndef |\nif __name__|app = Flask)'
+content = re.sub(pattern, fix, content, flags=re.DOTALL)
+
+with open('/opt/vep1445-traffic-gen/web_api.py', 'w') as f:
+    f.write(content)
+
+print("✓ web_api.py fixed")
+PYEOF
+
+# 3. Restart VEP1445
+sudo systemctl restart vep1445
+
+# 4. Wait a moment
+sleep 3
+
+# 5. Check logs
+sudo journalctl -u vep1445 -n 20 | grep -i "profile\|loaded"
+
+# 6. Refresh browser
+# http://localhost:5000
+
+═══════════════════════════════════════════════════════════════
+ ⚡ RECOMMENDED: OPTION 1 (Quick)
+═══════════════════════════════════════════════════════════════
+
+For immediate results, use Option 1:
+
+cd /opt/vep1445-traffic-gen
+cat > load_profiles_now.py << 'PYEOF'
+#!/usr/bin/env python3
+import json, requests, sys
+with open('auto_config.json') as f: config = json.load(f)
+for p in config.get('auto_profiles', []):
+    data = {'name': p['name'], 'source_interface': p['source_interface'],
+            'destination_interface': p['dest_interface'], 
+            'bandwidth_mbps': p['bandwidth_mbps'], 'packet_size': p['packet_size'],
+            'protocol': p['protocol'], 'enabled': False}
+    try:
+        r = requests.post('http://localhost:5000/api/traffic-profiles', json=data)
+        print(f"{'✓' if r.status_code in [200,201] else '✗'} {p['name']}")
+    except: pass
+PYEOF
+
+sudo python3 load_profiles_now.py
+
+Then refresh your browser!
+
+═══════════════════════════════════════════════════════════════
+ 🔍 VERIFICATION
+═══════════════════════════════════════════════════════════════
+
+After applying either fix:
+
+1. Check via API:
+   curl http://localhost:5000/api/traffic-profiles | jq
+
+   Should show:
+   [
+     {
+       "name": "Auto_eno2_to_eno3",
+       "source_interface": "eno2",
+       ...
+     }
+   ]
+
+2. Check in browser:
+   http://localhost:5000
+   → Click "Traffic Profiles" tab
+   → Should see:
+     ✓ Auto_eno2_to_eno3
+     ✓ Auto_eno3_to_eno2
+
+3. Check logs:
+   sudo journalctl -u vep1445 -n 30 | grep -i profile
+
+═══════════════════════════════════════════════════════════════
+ 🐛 WHY THIS HAPPENED
+═══════════════════════════════════════════════════════════════
+
+The installer has this bug in web_api.py:
+
+BUGGY CODE:
+  auto_profiles = generate_auto_profiles(interfaces)
+  if auto_profiles:
+      for profile in auto_profiles:
+          logger.info(f"Profile: {profile['name']}")  ← Only LOGS!
+      save_auto_config()  ← Only saves to JSON!
+  
+  # ❌ Never creates TrafficProfile objects!
+  # ❌ Never calls engine.add_traffic_profile()!
+
+FIXED CODE:
+  auto_profiles = generate_auto_profiles(interfaces)
+  if auto_profiles:
+      for profile in auto_profiles:
+          # ✓ CREATE the profile object
+          p = TrafficProfile(...)
+          # ✓ ADD to engine
+          engine.add_traffic_profile(p)
+          logger.info(f"Loaded: {profile['name']}")
+
+The installer generated the profiles but never loaded them into
+the running traffic engine!
+
+═══════════════════════════════════════════════════════════════
+ 📋 QUICK COMMAND REFERENCE
+═══════════════════════════════════════════════════════════════
+
+Quick fix (30 seconds):
+  cd /opt/vep1445-traffic-gen
+  sudo python3 load_profiles_now.py
+
+Check if loaded:
+  curl http://localhost:5000/api/traffic-profiles
+
+View in browser:
+  http://localhost:5000
+  → Traffic Profiles tab
+
+Enable and test:
+  → Check boxes next to profiles
+  → Click "Start Traffic"
+  → Verify with: sudo tcpdump -i eno2 -nn
+
+Permanent fix:
+  Apply Option 2 above, then:
+  sudo systemctl restart vep1445
+
+═══════════════════════════════════════════════════════════════
+ ✅ EXPECTED RESULT
+═══════════════════════════════════════════════════════════════
+
+After running load_profiles_now.py:
+
+Terminal output:
+  Loading auto-profiles into VEP1445...
+  
+  Found 2 profiles to load
+  
+    ✓ Auto_eno2_to_eno3: 24.1.6.142 -> 24.1.1.139
+    ✓ Auto_eno3_to_eno2: 24.1.1.139 -> 24.1.6.142
+  
+  ✅ Loaded 2/2 profiles
+  
+  Refresh your browser: http://localhost:5000
+
+Browser GUI (after refresh):
+  ┌────────────────────────────────────────────────────────┐
+  │ Traffic Profiles                                       │
+  ├────────────────────────────────────────────────────────┤
+  │                                                        │
+  │ Auto_eno2_to_eno3                        [DISABLED]   │
+  │ Source: eno2 (24.1.6.142)                             │
+  │ Dest: eno3 (24.1.1.139)                               │
+  │ Bandwidth: 100 Mbps | Protocol: UDP                   │
+  │ [Enable] [Edit] [Delete]                              │
+  │                                                        │
+  │ Auto_eno3_to_eno2                        [DISABLED]   │
+  │ Source: eno3 (24.1.1.139)                             │
+  │ Dest: eno2 (24.1.6.142)                               │
+  │ [Enable] [Edit] [Delete]                              │
+  └────────────────────────────────────────────────────────┘
+
+NOW YOU CAN:
+  ✓ Enable profiles
+  ✓ Start traffic
+  ✓ Test your network!
+
+═══════════════════════════════════════════════════════════════

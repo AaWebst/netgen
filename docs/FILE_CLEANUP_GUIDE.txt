@@ -1,0 +1,369 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                                ║
+║   VEP1445 FILE CLEANUP GUIDE                                  ║
+║   Essential vs. Obsolete Files                                ║
+║                                                                ║
+╚═══════════════════════════════════════════════════════════════╝
+
+CURRENT DIRECTORY: /opt/netgen
+═══════════════════════════════════════════════════════════════
+
+Your directory likely contains many files from development/testing.
+Let's identify what's ESSENTIAL vs what can be REMOVED.
+
+═══════════════════════════════════════════════════════════════
+ ✅ ESSENTIAL FILES (Keep These!)
+═══════════════════════════════════════════════════════════════
+
+CORE PYTHON FILES (Required):
+────────────────────────────────────────────────────────────────
+✓ traffic_engine_unified.py      Main traffic generation engine
+✓ web_api.py                     Flask REST API and web server
+✓ neighbor_discovery.py          ARP/LLDP neighbor detection
+✓ auto_config.py                 Auto-profile generation
+
+ALTERNATIVE ENGINES (Keep ONE set):
+────────────────────────────────────────────────────────────────
+Option A (Recommended):
+  ✓ traffic_engine_unified.py    Unified engine (mixed mode)
+
+Option B (Backup):
+  ✓ traffic_engine.py             Standard engine
+  ✓ traffic_engine_highperf.py   High-performance engine
+
+CONFIGURATION FILES:
+────────────────────────────────────────────────────────────────
+✓ sample_config.json             Example configuration
+✓ auto_config.json               Auto-generated profiles (created at runtime)
+✓ requirements.txt               Python dependencies
+✓ vep1445-traffic-gen.service    Systemd service file
+
+WEB GUI FILES:
+────────────────────────────────────────────────────────────────
+✓ web/index.html                 Web interface
+✓ web/neighbor-discovery.js      Neighbor detection frontend
+
+INSTALLATION SCRIPTS (Keep for reinstall):
+────────────────────────────────────────────────────────────────
+✓ install_enhanced.sh            Main installer (DHCP + auto-profiles)
+✓ fix_all_issues.sh              Emergency fix script
+
+UTILITY SCRIPTS (Keep for troubleshooting):
+────────────────────────────────────────────────────────────────
+✓ load_auto_profiles.py          Load profiles without restart
+✓ fix_auto_profiles.py           Fix web_api.py profile loading
+✓ setup_dhcp.sh                  DHCP configuration
+✓ fix_permissions.sh             Fix file permissions
+✓ fix_interfaces.sh              Fix MAC address detection
+
+DOCUMENTATION (Keep for reference):
+────────────────────────────────────────────────────────────────
+✓ README.txt                     Main documentation
+✓ LAB_SETUP_GUIDE.md             Your lab scenario guide
+✓ QUICKSTART.md                  Quick start guide
+✓ AUTO_PROFILE_GUIDE.txt         Auto-profile documentation
+✓ DHCP_GUIDE.txt                 DHCP configuration guide
+✓ AUTO_PROFILE_FIX.txt           Profile loading fix guide
+
+═══════════════════════════════════════════════════════════════
+ ❌ OBSOLETE FILES (Can Remove)
+═══════════════════════════════════════════════════════════════
+
+OLD INSTALLERS (Superseded by install_enhanced.sh):
+────────────────────────────────────────────────────────────────
+✗ install_allinone.sh            Old installer (no DHCP)
+✗ install.sh                     Basic installer
+✗ deploy.sh                      Old deployment script
+
+REDUNDANT FIXES (Already applied):
+────────────────────────────────────────────────────────────────
+✗ quickfix.sh                    Old quick fixes
+✗ fix_traffic.py                 Traffic fix (already in fix_all_issues.sh)
+
+DETECTION SCRIPTS (Only needed during install):
+────────────────────────────────────────────────────────────────
+✗ detect_interfaces.sh           Interface detection
+✗ configure_interfaces.sh        Interface configuration
+
+OLD CONFIGURATION SCRIPTS:
+────────────────────────────────────────────────────────────────
+✗ quick_config.sh                Old config (for eno2-eno6)
+✗ start_vep1445.sh              Manual startup (use systemctl)
+✗ setup_performance.sh           Performance tuning (if not using)
+
+BACKUP FILES:
+────────────────────────────────────────────────────────────────
+✗ *.backup                       Backup files
+✗ *.backup-*                     Timestamped backups
+✗ web_api.py.backup-dhcp         Old backup
+✗ traffic_engine_unified.py.backup-*  Old backups
+
+DOCUMENTATION REDUNDANCY:
+────────────────────────────────────────────────────────────────
+✗ INSTALL_GUIDE.md               Superseded by QUICKSTART.md
+✗ DEPLOYMENT_UNIFIED.md          Redundant
+✗ PERFORMANCE_GUIDE.md           Only if not using
+✗ USE_CASE_CLARIFICATION.md      Reference only
+✗ GITHUB_README.md               For GitHub, not needed locally
+✗ FIXES_SUMMARY.txt              Already applied
+✗ QUICK_REFERENCE.txt            Redundant
+
+ALTERNATE REQUIREMENTS:
+────────────────────────────────────────────────────────────────
+✗ requirements_highperf.txt      Only if using highperf engine
+
+═══════════════════════════════════════════════════════════════
+ 🎯 RECOMMENDED MINIMAL DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+
+After installation is complete and working, keep only these:
+
+PRODUCTION RUNTIME:
+────────────────────────────────────────────────────────────────
+/opt/vep1445-traffic-gen/
+├── traffic_engine_unified.py    ← Core engine
+├── web_api.py                   ← API server
+├── neighbor_discovery.py        ← Neighbor detection
+├── auto_config.py               ← Auto-profiles
+├── auto_config.json             ← Generated config
+├── sample_config.json           ← Example
+└── web/
+    ├── index.html               ← Web GUI
+    └── neighbor-discovery.js    ← Frontend JS
+
+MAINTENANCE SCRIPTS:
+────────────────────────────────────────────────────────────────
+├── load_auto_profiles.py        ← Load profiles on demand
+├── fix_all_issues.sh            ← Emergency fixes
+└── setup_dhcp.sh                ← DHCP reconfiguration
+
+DOCUMENTATION (Optional):
+────────────────────────────────────────────────────────────────
+├── README.txt                   ← Main docs
+├── QUICKSTART.md                ← Quick reference
+└── LAB_SETUP_GUIDE.md           ← Lab guide
+
+TOTAL ESSENTIAL: 16 files (13 runtime + 3 maintenance)
+
+═══════════════════════════════════════════════════════════════
+ 🧹 CLEANUP COMMANDS
+═══════════════════════════════════════════════════════════════
+
+SAFE CLEANUP (Recommended):
+────────────────────────────────────────────────────────────────
+
+Create backup first:
+  cd /opt
+  sudo tar -czf netgen-backup-$(date +%Y%m%d).tar.gz netgen/
+
+Remove obsolete files:
+  cd /opt/netgen
+  
+  # Remove old installers
+  sudo rm -f install_allinone.sh install.sh deploy.sh
+  sudo rm -f quickfix.sh detect_interfaces.sh configure_interfaces.sh
+  sudo rm -f quick_config.sh start_vep1445.sh setup_performance.sh
+  
+  # Remove redundant fixes
+  sudo rm -f fix_traffic.py
+  
+  # Remove backup files
+  sudo rm -f *.backup *.backup-*
+  
+  # Remove redundant docs
+  sudo rm -f INSTALL_GUIDE.md DEPLOYMENT_UNIFIED.md PERFORMANCE_GUIDE.md
+  sudo rm -f USE_CASE_CLARIFICATION.md GITHUB_README.md
+  sudo rm -f FIXES_SUMMARY.txt QUICK_REFERENCE.txt
+  sudo rm -f requirements_highperf.txt
+  
+  # Remove alternate engines (if using unified)
+  sudo rm -f traffic_engine.py traffic_engine_highperf.py
+
+AGGRESSIVE CLEANUP (If production is stable):
+────────────────────────────────────────────────────────────────
+
+Keep ONLY runtime files:
+  cd /opt/vep1445-traffic-gen
+  
+  # List of files to KEEP
+  KEEP_FILES=(
+    "traffic_engine_unified.py"
+    "web_api.py"
+    "neighbor_discovery.py"
+    "auto_config.py"
+    "auto_config.json"
+    "sample_config.json"
+  )
+  
+  # Remove everything else (DANGEROUS - backup first!)
+  # This is just an example - adjust for your needs
+
+═══════════════════════════════════════════════════════════════
+ 📊 BEFORE & AFTER COMPARISON
+═══════════════════════════════════════════════════════════════
+
+BEFORE CLEANUP:
+────────────────────────────────────────────────────────────────
+/opt/netgen/
+├── 41 files total
+├── Multiple installers
+├── Redundant documentation
+├── Backup files
+├── Old fix scripts
+└── ~500 KB total
+
+AFTER CLEANUP:
+────────────────────────────────────────────────────────────────
+/opt/vep1445-traffic-gen/
+├── 16 essential files
+├── 1 installer (enhanced)
+├── Core documentation only
+├── No backups
+├── Current fix scripts
+└── ~200 KB total
+
+Space saved: ~60%
+
+═══════════════════════════════════════════════════════════════
+ ✅ VERIFICATION AFTER CLEANUP
+═══════════════════════════════════════════════════════════════
+
+After cleanup, verify everything still works:
+
+1. Check VEP1445 is running:
+   sudo systemctl status vep1445
+
+2. Access web GUI:
+   http://localhost:5000
+
+3. Check profiles visible:
+   - Should see Auto_eno2_to_eno3
+   - Should see Auto_eno3_to_eno2
+
+4. Test traffic generation:
+   - Enable a profile
+   - Start traffic
+   - Verify with tcpdump
+
+5. Check logs:
+   sudo journalctl -u vep1445 -n 20
+
+If anything breaks:
+  - Restore from backup
+  - Check which file was needed
+  - Keep that file
+
+═══════════════════════════════════════════════════════════════
+ 🎯 RECOMMENDED CLEANUP PROCEDURE
+═══════════════════════════════════════════════════════════════
+
+Step 1: Backup Everything
+────────────────────────────────────────────────────────────────
+cd /opt
+sudo tar -czf netgen-backup-$(date +%Y%m%d).tar.gz netgen/
+ls -lh netgen-backup-*.tar.gz
+
+Step 2: Copy to Production Directory
+────────────────────────────────────────────────────────────────
+# If you're still in /opt/netgen, move to proper location
+sudo mkdir -p /opt/vep1445-traffic-gen
+
+# Copy ONLY essential files
+cd /opt/netgen
+sudo cp traffic_engine_unified.py /opt/vep1445-traffic-gen/
+sudo cp web_api.py /opt/vep1445-traffic-gen/
+sudo cp neighbor_discovery.py /opt/vep1445-traffic-gen/
+sudo cp auto_config.py /opt/vep1445-traffic-gen/
+sudo cp auto_config.json /opt/vep1445-traffic-gen/
+sudo cp sample_config.json /opt/vep1445-traffic-gen/
+sudo cp -r web /opt/vep1445-traffic-gen/
+
+# Copy maintenance scripts
+sudo cp load_auto_profiles.py /opt/vep1445-traffic-gen/
+sudo cp fix_all_issues.sh /opt/vep1445-traffic-gen/
+sudo cp setup_dhcp.sh /opt/vep1445-traffic-gen/
+
+# Copy docs
+sudo cp README.txt /opt/vep1445-traffic-gen/
+sudo cp QUICKSTART.md /opt/vep1445-traffic-gen/
+sudo cp LAB_SETUP_GUIDE.md /opt/vep1445-traffic-gen/
+
+Step 3: Update Systemd Service
+────────────────────────────────────────────────────────────────
+sudo nano /etc/systemd/system/vep1445.service
+
+# Make sure WorkingDirectory points to:
+WorkingDirectory=/opt/vep1445-traffic-gen
+
+sudo systemctl daemon-reload
+
+Step 4: Test
+────────────────────────────────────────────────────────────────
+sudo systemctl restart vep1445
+sudo systemctl status vep1445
+# Access http://localhost:5000
+
+Step 5: Remove Old Directory
+────────────────────────────────────────────────────────────────
+# Only after verifying everything works!
+cd /opt
+sudo rm -rf netgen/
+
+# Keep backup for 30 days
+ls -lh netgen-backup-*.tar.gz
+
+═══════════════════════════════════════════════════════════════
+ 📁 FINAL CLEAN STRUCTURE
+═══════════════════════════════════════════════════════════════
+
+/opt/vep1445-traffic-gen/          ← Production directory
+├── traffic_engine_unified.py      Runtime
+├── web_api.py                     Runtime
+├── neighbor_discovery.py          Runtime
+├── auto_config.py                 Runtime
+├── auto_config.json               Runtime (generated)
+├── sample_config.json             Reference
+├── web/                           Frontend
+│   ├── index.html
+│   └── neighbor-discovery.js
+├── load_auto_profiles.py          Maintenance
+├── fix_all_issues.sh              Maintenance
+├── setup_dhcp.sh                  Maintenance
+├── README.txt                     Docs
+├── QUICKSTART.md                  Docs
+└── LAB_SETUP_GUIDE.md             Docs
+
+/etc/systemd/system/
+└── vep1445.service                Service config
+
+/var/log/vep1445/                  Logs
+└── vep1445.log
+
+Clean, organized, production-ready! ✅
+
+═══════════════════════════════════════════════════════════════
+ 💡 TIPS
+═══════════════════════════════════════════════════════════════
+
+• Keep backups for 30 days before deleting
+• Test after every cleanup step
+• Don't remove files you don't recognize
+• Keep install_enhanced.sh if you might reinstall
+• Keep documentation that's useful to you
+• Remove alternate engines if only using unified
+• Compress old backups: gzip *.backup
+
+═══════════════════════════════════════════════════════════════
+ SUMMARY
+═══════════════════════════════════════════════════════════════
+
+Essential Runtime Files:  7 (Python + config)
+Essential Web Files:      2 (HTML + JS)
+Maintenance Scripts:      3 (load, fix, setup)
+Documentation:            3 (README, guides)
+────────────────────────────────────────────────────────────────
+TOTAL ESSENTIAL:         15 files
+
+Everything else can be safely removed after backup.
+
+═══════════════════════════════════════════════════════════════

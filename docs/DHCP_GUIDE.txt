@@ -1,0 +1,425 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                                ║
+║      VEP1445 DHCP & IP ADDRESS GUIDE                          ║
+║      Understanding Traffic Generation Modes                    ║
+║                                                                ║
+╚═══════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════
+ YOUR QUESTION: DHCP SUPPORT
+═══════════════════════════════════════════════════════════════
+
+Question: "I have my VEP1445 plugged into a device however it 
+doesn't obtain an IP address to generate traffic from - is DHCP 
+supported?"
+
+Answer: YES! DHCP is supported. VEP1445 has TWO traffic modes:
+
+  1. RAW PACKET MODE (current default)
+     - Doesn't need IP addresses
+     - Generates Ethernet frames directly
+     - Fast but limited routing
+  
+  2. IP TRAFFIC MODE (with DHCP)
+     - Obtains IP addresses via DHCP
+     - Generates real IP packets
+     - Can be routed through your network
+
+═══════════════════════════════════════════════════════════════
+ UNDERSTANDING THE TWO MODES
+═══════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────┐
+│ MODE 1: RAW PACKET MODE (Current)                          │
+└─────────────────────────────────────────────────────────────┘
+
+How it works:
+  VEP1445 → Raw Ethernet Frame → Cable → Device
+  
+  Frame structure:
+    [Dest MAC][Src MAC][Type][IP Header][Data]
+    
+  Characteristics:
+    ✓ Very fast (direct hardware access)
+    ✓ No IP configuration needed
+    ✓ Can test pure Layer 2 forwarding
+    
+    ✗ Packets may not route beyond local LAN
+    ✗ Destination device might ignore (no IP)
+    ✗ ARP not handled automatically
+
+Use when:
+  - Testing switches (Layer 2)
+  - Testing cables
+  - Maximum throughput testing
+  - Don't need routing
+
+┌─────────────────────────────────────────────────────────────┐
+│ MODE 2: IP TRAFFIC MODE (With DHCP)                        │
+└─────────────────────────────────────────────────────────────┘
+
+How it works:
+  VEP1445 ──DHCP──> Gets IP 192.168.1.50
+           ──ARP───> Resolves gateway MAC
+           ──IP───> Sends routable packets
+  
+  Characteristics:
+    ✓ Full IP stack support
+    ✓ Can route through network
+    ✓ ARP handled automatically
+    ✓ Works with routers/firewalls
+    
+    ✗ Slightly slower (IP stack overhead)
+    ✗ Needs DHCP server on each LAN
+
+Use when:
+  - Testing routers (Layer 3)
+  - Need traffic to route between LANs
+  - Testing realistic scenarios
+  - Connected to real network
+
+═══════════════════════════════════════════════════════════════
+ YOUR SCENARIO
+═══════════════════════════════════════════════════════════════
+
+Your Setup:
+  VEP1445 (eno2) ──cable──> Device (your lab equipment)
+  
+Current State:
+  ✗ VEP1445 has no IP address
+  ✗ Traffic not being routed/received properly
+  
+What You Need:
+  ✓ DHCP server on connected network, OR
+  ✓ Static IP configuration
+
+═══════════════════════════════════════════════════════════════
+ SOLUTION: ENABLE DHCP
+═══════════════════════════════════════════════════════════════
+
+Option A: Use DHCP (Recommended)
+────────────────────────────────────────────────────────────────
+
+Run the setup script:
+  
+  cd /opt/vep1445-complete
+  sudo bash setup_dhcp.sh
+
+This will:
+  1. Configure all interfaces (eno2-eno6) for DHCP
+  2. Request IP addresses from your network
+  3. Update VEP1445 to use real IPs
+  4. Show assigned IP addresses
+
+After running:
+  
+  eno2: 192.168.1.50/24  ← Got IP from LAN 1
+  eno3: 192.168.2.51/24  ← Got IP from LAN 2
+  eno4: 192.168.3.52/24  ← Got IP from LAN 3
+  ...
+
+Option B: Configure Static IPs
+────────────────────────────────────────────────────────────────
+
+If you don't have DHCP servers:
+
+  # For each interface
+  sudo ip addr add 192.168.1.50/24 dev eno2
+  sudo ip addr add 192.168.2.50/24 dev eno3
+  sudo ip addr add 192.168.3.50/24 dev eno4
+  sudo ip addr add 192.168.4.50/24 dev eno5
+  sudo ip addr add 192.168.5.50/24 dev eno6
+  
+  # Set routes
+  sudo ip route add 192.168.1.0/24 dev eno2
+  sudo ip route add 192.168.2.0/24 dev eno3
+  # etc...
+
+Make permanent (Ubuntu with Netplan):
+
+  sudo nano /etc/netplan/99-vep1445.yaml
+  
+  Add:
+    network:
+      version: 2
+      ethernets:
+        eno2:
+          addresses: [192.168.1.50/24]
+        eno3:
+          addresses: [192.168.2.50/24]
+        # etc...
+  
+  sudo netplan apply
+
+═══════════════════════════════════════════════════════════════
+ TRAFFIC GENERATION WITH IP ADDRESSES
+═══════════════════════════════════════════════════════════════
+
+After configuring DHCP/IPs, restart VEP1445:
+
+  sudo systemctl restart vep1445
+
+In Web GUI (http://localhost:5000):
+
+  Create Traffic Profile:
+  ┌──────────────────────────────────────────┐
+  │ Name: LAN1_to_LAN2                       │
+  │                                          │
+  │ Source Interface: eno2                   │
+  │ Source IP: 192.168.1.50 (auto-filled!)  │
+  │                                          │
+  │ Dest Interface: eno3                     │
+  │ Dest IP: 192.168.2.100                  │
+  │                                          │
+  │ Protocol: UDP                            │
+  │ Bandwidth: 500 Mbps                      │
+  │ Packet Size: 1400                        │
+  └──────────────────────────────────────────┘
+  
+  Now traffic will:
+    1. Use real source IP: 192.168.1.50
+    2. Send to real dest IP: 192.168.2.100
+    3. Be routable through your network!
+
+═══════════════════════════════════════════════════════════════
+ VERIFICATION
+═══════════════════════════════════════════════════════════════
+
+Step 1: Check IPs Assigned
+────────────────────────────────────────────────────────────────
+
+  ip addr show eno2
+  
+  Should show:
+    2: eno2: <BROADCAST,MULTICAST,UP,LOWER_UP>
+       link/ether 52:54:00:12:34:56
+       inet 192.168.1.50/24 ← ✅ Has IP!
+
+Step 2: Ping Gateway
+────────────────────────────────────────────────────────────────
+
+  ping -I eno2 192.168.1.1
+  
+  If successful:
+    ✅ Network connectivity works
+    ✅ Can send/receive traffic
+    ✅ Ready for traffic generation
+
+Step 3: Generate Test Traffic
+────────────────────────────────────────────────────────────────
+
+  In VEP1445 web GUI:
+    - Create profile (eno2 → eno3)
+    - Start traffic
+  
+  On destination device (192.168.2.100):
+    sudo tcpdump -i eth0 src 192.168.1.50
+    
+    Should see:
+      12:34:56.789 IP 192.168.1.50 > 192.168.2.100: UDP
+      ✅ Traffic is being received!
+
+═══════════════════════════════════════════════════════════════
+ COMMON SCENARIOS
+═══════════════════════════════════════════════════════════════
+
+Scenario 1: Direct Connection (No DHCP Server)
+────────────────────────────────────────────────────────────────
+
+Setup:
+  VEP1445 eno2 ──cable── Device eth0
+  
+Problem:
+  No DHCP server, no IPs assigned
+  
+Solution:
+  # On VEP1445
+  sudo ip addr add 192.168.100.1/24 dev eno2
+  
+  # On Device
+  sudo ip addr add 192.168.100.2/24 dev eth0
+  
+  # Test
+  ping 192.168.100.2  # From VEP1445
+  
+  # Generate traffic
+  Source IP: 192.168.100.1
+  Dest IP: 192.168.100.2
+
+Scenario 2: Multiple LANs with DHCP
+────────────────────────────────────────────────────────────────
+
+Setup:
+  VEP1445 eno2 → LAN 1 (192.168.1.0/24, DHCP server)
+  VEP1445 eno3 → LAN 2 (192.168.2.0/24, DHCP server)
+  VEP1445 eno4 → LAN 3 (192.168.3.0/24, DHCP server)
+  
+Solution:
+  sudo bash setup_dhcp.sh
+  
+  Auto-configured:
+    eno2: 192.168.1.50/24 (from DHCP)
+    eno3: 192.168.2.51/24 (from DHCP)
+    eno4: 192.168.3.52/24 (from DHCP)
+  
+  Generate traffic:
+    LAN1 → LAN2: 192.168.1.50 → 192.168.2.100
+    LAN2 → LAN3: 192.168.2.51 → 192.168.3.100
+
+Scenario 3: Behind Router/Firewall
+────────────────────────────────────────────────────────────────
+
+Setup:
+  VEP1445 eno2 → Switch → Router → Internet
+  
+Solution:
+  1. Get IP via DHCP:
+     sudo bash setup_dhcp.sh
+     
+  2. Check default route:
+     ip route show
+     # Should see: default via 192.168.1.1 dev eno2
+  
+  3. Generate traffic to internet:
+     Source: 192.168.1.50 (auto)
+     Dest: 8.8.8.8 (Google DNS)
+     
+  4. Verify routing:
+     traceroute -i eno2 8.8.8.8
+
+═══════════════════════════════════════════════════════════════
+ TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+Problem: No IP Address Obtained
+────────────────────────────────────────────────────────────────
+
+Symptoms:
+  ip addr show eno2
+  # No "inet" line showing IP
+
+Checks:
+  1. Is cable connected?
+     ethtool eno2 | grep "Link detected"
+     # Should show: Link detected: yes
+  
+  2. Is interface UP?
+     ip link show eno2
+     # Should show: UP,LOWER_UP
+  
+  3. Is DHCP server running?
+     # On DHCP server, check logs
+     sudo journalctl -u isc-dhcp-server
+  
+  4. Manual DHCP request:
+     sudo dhclient -v eno2
+     # Watch for DHCP messages
+
+Solutions:
+  - Check cable/connection
+  - Verify DHCP server is running
+  - Check DHCP server has free IPs
+  - Try static IP instead
+  - Check switch port not disabled
+
+Problem: Traffic Not Being Routed
+────────────────────────────────────────────────────────────────
+
+Symptoms:
+  - Traffic generated but not reaching destination
+  - tcpdump on dest shows no packets
+
+Checks:
+  1. Can you ping destination?
+     ping 192.168.2.100
+  
+  2. Is routing configured?
+     ip route show
+     # Need route to dest network
+  
+  3. Is dest device listening?
+     # On dest: sudo tcpdump -i eth0
+
+Solutions:
+  - Add route: sudo ip route add 192.168.2.0/24 via 192.168.1.1
+  - Check firewall rules
+  - Verify destination device accepts traffic
+  - Check destination IP is reachable
+
+Problem: ARP Resolution Failing
+────────────────────────────────────────────────────────────────
+
+Symptoms:
+  - Can't send to specific IP
+  - "No route to host" or "Destination unreachable"
+
+Checks:
+  1. Check ARP table:
+     arp -n
+     # Should show destination MAC
+  
+  2. Try manual ARP:
+     arping -I eno2 192.168.1.1
+
+Solutions:
+  - Wait for ARP to resolve
+  - Manually add ARP entry:
+    sudo arp -s 192.168.1.1 aa:bb:cc:dd:ee:ff
+  - Check Layer 2 connectivity
+
+═══════════════════════════════════════════════════════════════
+ WHICH MODE SHOULD YOU USE?
+═══════════════════════════════════════════════════════════════
+
+Use RAW PACKET MODE when:
+  ✓ Testing switches (Layer 2 only)
+  ✓ Maximum performance needed
+  ✓ Testing on isolated network
+  ✓ No routing required
+
+Use IP/DHCP MODE when:
+  ✓ Testing routers (Layer 3)
+  ✓ Need realistic network traffic
+  ✓ Traffic must route between LANs
+  ✓ Connected to real network infrastructure
+  ✓ Your current scenario! ← You are here
+
+═══════════════════════════════════════════════════════════════
+ QUICK START COMMAND
+═══════════════════════════════════════════════════════════════
+
+Based on your question, you want DHCP mode. Run this:
+
+  cd /opt/vep1445-complete
+  sudo bash setup_dhcp.sh
+
+Then:
+  sudo systemctl restart vep1445
+  
+Check IPs:
+  ip addr show | grep "inet "
+  
+Generate traffic with real IPs! ✅
+
+═══════════════════════════════════════════════════════════════
+ SUMMARY
+═══════════════════════════════════════════════════════════════
+
+Your Question: "Is DHCP supported?"
+
+Answer: YES!
+
+How to enable:
+  1. Run: sudo bash setup_dhcp.sh
+  2. Restart: sudo systemctl restart vep1445
+  3. Create traffic profiles using obtained IPs
+  4. Traffic will now route properly!
+
+What you get:
+  ✅ Real IP addresses on each interface
+  ✅ Proper ARP resolution
+  ✅ Routable traffic
+  ✅ Works with network devices
+  ✅ Realistic traffic generation
+
+═══════════════════════════════════════════════════════════════
