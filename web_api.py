@@ -23,39 +23,6 @@ from traffic_engine_unified import (
 )
 from neighbor_discovery import neighbor_discovery
 
-# Import new feature modules (optional - will work even if not available)
-try:
-    from monitoring.snmp_agent import SNMPAgentFarm
-except ImportError:
-    SNMPAgentFarm = None
-
-try:
-    from monitoring.netflow_generator import FlowGenerator
-except ImportError:
-    FlowGenerator = None
-
-try:
-    from protocols.bgp_routing import BGPSession
-except ImportError:
-    BGPSession = None
-
-try:
-    from testing.qos_validation import QoSValidator, QoSTestScenarios
-except ImportError:
-    QoSValidator = None
-    QoSTestScenarios = None
-
-try:
-    from testing.network_impairments import PacketImpairment, ImpairmentProfile
-except ImportError:
-    PacketImpairment = None
-    ImpairmentProfile = None
-
-try:
-    from protocols.tcp_performance_optimized import HighPerformanceTCPEngine
-except ImportError:
-    HighPerformanceTCPEngine = None
-
 app = Flask(__name__, static_folder='web')
 CORS(app)
 
@@ -65,16 +32,6 @@ engine_lock = threading.Lock()
 
 # Configuration file
 CONFIG_FILE = '/home/claude/vep1445_runtime_config.json'
-
-# State for new features
-feature_state = {
-    'snmp_farm': None,
-    'netflow_gen': None,
-    'bgp_session': None,
-    'qos_validator': None,
-    'impairment_engine': None,
-    'tcp_engine': None
-}
 
 
 @app.route('/')
@@ -573,18 +530,19 @@ def initialize_default_config():
     import logging
     logger = logging.getLogger(__name__)
     
-    # Add 5 copper LAN ports (eth1-eth5) - 1G, optimized mode
-    for i in range(1, 6):
+    # Add 5 copper LAN ports (eno2-eno8) - 1G, optimized mode
+    for i in range(2, 9):
         config = InterfaceConfig(
-            name=f"eth{i}",
+            name=f"eno{i}",
             mac_address=f"00:11:22:33:44:{i:02x}",
             interface_type=InterfaceType.COPPER_OPTIMIZED,
             speed_mbps=1000
         )
         engine.add_interface(config)
     
-    # Add 2 SFP 10G ports (sfp1-sfp2) - 10G, DPDK mode
-    for i in range(1, 3):
+    # Add 2 SFP 10G ports (sfp1-sfp2) - 10G, DPDK mode - DISABLED
+    if False:  # SFP ports disabled
+        for i in range(1, 3):
         config = InterfaceConfig(
             name=f"sfp{i}",
             mac_address=f"00:11:22:33:55:{i:02x}",
@@ -594,20 +552,21 @@ def initialize_default_config():
         engine.add_interface(config)
     
     logger.info(f"Initialized {len(engine.interfaces)} interfaces:")
-    logger.info(f"  - 5 copper ports (eth1-eth5): 1Gbps optimized mode")
-    logger.info(f"  - 2 SFP ports (sfp1-sfp2): 10Gbps DPDK mode")
+    logger.info(f"  - 7 copper ports (eno2-eno8): 1Gbps optimized mode")
+    # logger.info(f"  - 2 SFP ports (sfp1-sfp2): 10Gbps DPDK mode")  # Disabled
     
     # Try to initialize interfaces with network discovery
     try:
         # For copper ports, try DHCP discovery
-        for name in [f"eth{i}" for i in range(1, 6)]:
+        for name in [f"eno{i}" for i in range(2, 9)]:
             if name in engine.interfaces:
                 interface = engine.interfaces[name]
                 # In unified engine, interfaces are already initialized
                 logger.info(f"  {name}: ready")
         
         # For SFP ports, they're ready for traffic (no DHCP needed usually)
-        for name in [f"sfp{i}" for i in range(1, 3)]:
+        if False:  # SFP disabled
+            for name in [f"sfp{i}" for i in range(1, 3)]:
             if name in engine.interfaces:
                 logger.info(f"  {name}: ready (DPDK mode)")
                 
@@ -676,223 +635,6 @@ def get_neighbors(interface_name):
             'success': False,
             'error': str(e)
         }), 500
-
-
-# ============================================================================
-# NEW FEATURES - SNMP, NetFlow, BGP, QoS, Impairments
-# ============================================================================
-
-@app.route('/api/snmp/start', methods=['POST'])
-def snmp_start():
-    """Start SNMP agent farm"""
-    if not SNMPAgentFarm:
-        return jsonify({'success': False, 'error': 'SNMP module not available'}), 400
-    
-    try:
-        data = request.json
-        base_ip = data.get('base_ip', '192.168.100.1')
-        count = data.get('count', 10)
-        
-        with engine_lock:
-            if not feature_state['snmp_farm']:
-                feature_state['snmp_farm'] = SNMPAgentFarm()
-            
-            feature_state['snmp_farm'].create_agents(base_ip=base_ip, count=count)
-            feature_state['snmp_farm'].start_all()
-        
-        return jsonify({'success': True, 'agents': count, 'base_ip': base_ip})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/snmp/stop', methods=['POST'])
-def snmp_stop():
-    """Stop SNMP agent farm"""
-    try:
-        with engine_lock:
-            if feature_state['snmp_farm']:
-                feature_state['snmp_farm'].stop_all()
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/snmp/status', methods=['GET'])
-def snmp_status():
-    """Get SNMP agent status"""
-    with engine_lock:
-        if feature_state['snmp_farm']:
-            stats = feature_state['snmp_farm'].get_total_stats()
-            return jsonify({'success': True, 'stats': stats})
-        return jsonify({'success': True, 'stats': {'agent_count': 0}})
-
-
-@app.route('/api/netflow/start', methods=['POST'])
-def netflow_start():
-    """Start NetFlow generation"""
-    if not FlowGenerator:
-        return jsonify({'success': False, 'error': 'NetFlow module not available'}), 400
-    
-    try:
-        data = request.json
-        collector_ip = data['collector_ip']
-        collector_port = data.get('collector_port', 2055)
-        flows_per_sec = data.get('flows_per_sec', 1000)
-        duration = data.get('duration', 60)
-        
-        with engine_lock:
-            if not feature_state['netflow_gen']:
-                feature_state['netflow_gen'] = FlowGenerator('netflow5')
-        
-        def netflow_worker():
-            feature_state['netflow_gen'].simulate_traffic_pattern(
-                duration=duration,
-                flows_per_second=flows_per_sec,
-                collector_ip=collector_ip,
-                collector_port=collector_port
-            )
-        
-        threading.Thread(target=netflow_worker, daemon=True).start()
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/bgp/start', methods=['POST'])
-def bgp_start():
-    """Start BGP session"""
-    if not BGPSession:
-        return jsonify({'success': False, 'error': 'BGP module not available'}), 400
-    
-    try:
-        data = request.json
-        peer_ip = data['peer_ip']
-        local_asn = data.get('local_asn', 65000)
-        route_count = data.get('route_count', 1000)
-        
-        def bgp_worker():
-            with engine_lock:
-                session = BGPSession(local_asn=local_asn, router_id="1.1.1.1")
-                feature_state['bgp_session'] = session
-            
-            if session.connect(peer_ip, 179):
-                session.send_open()
-                for i in range(route_count):
-                    prefix = f"10.{i//256}.{i%256}.0/24"
-                    session.advertise_route(prefix, next_hop=peer_ip)
-        
-        threading.Thread(target=bgp_worker, daemon=True).start()
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/bgp/stop', methods=['POST'])
-def bgp_stop():
-    """Stop BGP session"""
-    try:
-        with engine_lock:
-            if feature_state['bgp_session']:
-                feature_state['bgp_session'].close()
-                feature_state['bgp_session'] = None
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/qos/test', methods=['POST'])
-def qos_test():
-    """Run QoS validation test"""
-    if not QoSValidator or not QoSTestScenarios:
-        return jsonify({'success': False, 'error': 'QoS module not available'}), 400
-    
-    try:
-        data = request.json
-        src_ip = data['src_ip']
-        dst_ip = data['dst_ip']
-        duration = data.get('duration', 60)
-        scenario = data.get('scenario', 'voice_video_data')
-        
-        def qos_worker():
-            validator = QoSValidator(src_ip, dst_ip)
-            
-            if scenario == 'voice_video_data':
-                profiles = QoSTestScenarios.voice_video_data_test()
-            elif scenario == 'eight_class':
-                profiles = QoSTestScenarios.eight_class_test()
-            else:
-                profiles = QoSTestScenarios.voice_video_data_test()
-            
-            for profile in profiles:
-                validator.add_profile(profile)
-            
-            validator.run_test(duration=duration)
-            results = validator.get_all_results()
-            
-            with engine_lock:
-                feature_state['qos_results'] = results
-        
-        threading.Thread(target=qos_worker, daemon=True).start()
-        return jsonify({'success': True, 'message': 'QoS test started'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/qos/results', methods=['GET'])
-def qos_results():
-    """Get QoS test results"""
-    with engine_lock:
-        results = feature_state.get('qos_results', [])
-        return jsonify({'success': True, 'results': results})
-
-
-@app.route('/api/impairments/enable', methods=['POST'])
-def impairments_enable():
-    """Enable network impairments"""
-    if not PacketImpairment:
-        return jsonify({'success': False, 'error': 'Impairment module not available'}), 400
-    
-    try:
-        data = request.json
-        
-        with engine_lock:
-            if not feature_state['impairment_engine']:
-                feature_state['impairment_engine'] = PacketImpairment()
-            
-            feature_state['impairment_engine'].latency_ms = data.get('latency_ms', 0)
-            feature_state['impairment_engine'].jitter_ms = data.get('jitter_ms', 0)
-            feature_state['impairment_engine'].loss_percent = data.get('loss_percent', 0)
-            feature_state['impairment_engine'].burst_loss_percent = data.get('burst_loss_percent', 0)
-            feature_state['impairment_engine'].reorder_percent = data.get('reorder_percent', 0)
-            feature_state['impairment_engine'].duplicate_percent = data.get('duplicate_percent', 0)
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/impairments/disable', methods=['POST'])
-def impairments_disable():
-    """Disable network impairments"""
-    with engine_lock:
-        feature_state['impairment_engine'] = None
-    return jsonify({'success': True})
-
-
-@app.route('/api/features/status', methods=['GET'])
-def features_status():
-    """Get status of all features"""
-    return jsonify({
-        'success': True,
-        'features': {
-            'snmp': SNMPAgentFarm is not None,
-            'netflow': FlowGenerator is not None,
-            'bgp': BGPSession is not None,
-            'qos': QoSValidator is not None,
-            'impairments': PacketImpairment is not None,
-            'tcp_optimized': HighPerformanceTCPEngine is not None
-        }
-    })
 
 
 if __name__ == '__main__':
