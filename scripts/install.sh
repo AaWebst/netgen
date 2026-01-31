@@ -1,5 +1,5 @@
 #!/bin/bash
-# VEP1445 Installation Script
+# VEP1445 Installation Script - CORRECTED
 # Installs the VEP1445 Traffic Generator with proper permissions and configuration
 
 set -e
@@ -43,19 +43,20 @@ echo "📋 Copying files..."
 cp "$CURRENT_DIR/web_api.py" "$INSTALL_DIR/"
 cp "$CURRENT_DIR/traffic_engine_unified.py" "$INSTALL_DIR/"
 cp "$CURRENT_DIR/neighbor_discovery.py" "$INSTALL_DIR/"
-cp "$CURRENT_DIR/README.md" "$INSTALL_DIR/"
+cp "$CURRENT_DIR/README.md" "$INSTALL_DIR/" 2>/dev/null || true
+cp "$CURRENT_DIR/requirements.txt" "$INSTALL_DIR/" 2>/dev/null || true
 
 # Web files
-cp -r "$CURRENT_DIR/web/"* "$INSTALL_DIR/web/"
+cp -r "$CURRENT_DIR/web/"* "$INSTALL_DIR/web/" 2>/dev/null || true
 
 # Protocol files
-cp -r "$CURRENT_DIR/protocols/"* "$INSTALL_DIR/protocols/"
+cp -r "$CURRENT_DIR/protocols/"* "$INSTALL_DIR/protocols/" 2>/dev/null || true
 
 # Monitoring files
-cp -r "$CURRENT_DIR/monitoring/"* "$INSTALL_DIR/monitoring/"
+cp -r "$CURRENT_DIR/monitoring/"* "$INSTALL_DIR/monitoring/" 2>/dev/null || true
 
 # Testing files
-cp -r "$CURRENT_DIR/testing/"* "$INSTALL_DIR/testing/"
+cp -r "$CURRENT_DIR/testing/"* "$INSTALL_DIR/testing/" 2>/dev/null || true
 
 # Config files
 if [ -d "$CURRENT_DIR/config" ]; then
@@ -69,7 +70,7 @@ fi
 
 # Scripts
 if [ -d "$CURRENT_DIR/scripts" ]; then
-    cp -r "$CURRENT_DIR/scripts/"* "$INSTALL_DIR/scripts/" 2>/dev/null || true
+    cp "$CURRENT_DIR/scripts/"*.sh "$INSTALL_DIR/scripts/" 2>/dev/null || true
 fi
 
 echo "✅ Files copied"
@@ -94,7 +95,7 @@ chmod 755 "$INSTALL_DIR/web_api.py"
 find "$INSTALL_DIR/scripts" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 
 # Web files readable
-find "$INSTALL_DIR/web" -type f -exec chmod 644 {} \;
+find "$INSTALL_DIR/web" -type f -exec chmod 644 {} \; 2>/dev/null || true
 
 # Config files
 find "$INSTALL_DIR/config" -type f -exec chmod 644 {} \; 2>/dev/null || true
@@ -112,9 +113,19 @@ pip3 install flask flask-cors || \
 echo "⚠️  Could not install dependencies automatically. Please run: pip3 install flask flask-cors"
 echo ""
 
-# Create systemd service (optional)
+# Fix config path in web_api.py
+echo "🔧 Updating configuration paths..."
+cd "$INSTALL_DIR"
+if [ -f "web_api.py" ]; then
+    # Update CONFIG_FILE path to use install directory
+    sed -i "s|CONFIG_FILE = '/home/claude/vep1445_runtime_config.json'|CONFIG_FILE = '$INSTALL_DIR/vep1445_runtime_config.json'|g" web_api.py
+    echo "✅ Config path updated to: $INSTALL_DIR/vep1445_runtime_config.json"
+fi
+echo ""
+
+# Create systemd service
 echo "🔧 Creating systemd service..."
-cat > /etc/systemd/system/vep1445.service << 'EOF'
+cat > /etc/systemd/system/vep1445.service << EOF
 [Unit]
 Description=VEP1445 Traffic Generator & Network Impairment System
 After=network.target
@@ -122,12 +133,12 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/vep1445-traffic-gen
-ExecStart=/usr/bin/python3 /opt/vep1445-traffic-gen/web_api.py
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/usr/bin/python3 $INSTALL_DIR/web_api.py
 Restart=on-failure
 RestartSec=5s
-StandardOutput=append:/opt/vep1445-traffic-gen/logs/vep1445.log
-StandardError=append:/opt/vep1445-traffic-gen/logs/vep1445-error.log
+StandardOutput=append:$INSTALL_DIR/logs/vep1445.log
+StandardError=append:$INSTALL_DIR/logs/vep1445-error.log
 
 [Install]
 WantedBy=multi-user.target
@@ -138,17 +149,18 @@ systemctl daemon-reload
 echo "✅ Systemd service created"
 echo ""
 
-# Create default runtime config if it doesn't exist
-if [ ! -f /home/claude/vep1445_runtime_config.json ]; then
+# Create default runtime config in install directory
+CONFIG_FILE="$INSTALL_DIR/vep1445_runtime_config.json"
+if [ ! -f "$CONFIG_FILE" ]; then
     echo "📝 Creating default runtime configuration..."
-    cat > /home/claude/vep1445_runtime_config.json << 'EOF'
+    cat > "$CONFIG_FILE" << 'CONFIGEOF'
 {
   "interfaces": {},
   "traffic_profiles": {}
 }
-EOF
-    chmod 644 /home/claude/vep1445_runtime_config.json
-    echo "✅ Default config created"
+CONFIGEOF
+    chmod 644 "$CONFIG_FILE"
+    echo "✅ Default config created at: $CONFIG_FILE"
     echo ""
 fi
 
@@ -158,6 +170,7 @@ echo "✅ Installation Complete!"
 echo "=============================================="
 echo ""
 echo "Installation directory: $INSTALL_DIR"
+echo "Configuration file: $CONFIG_FILE"
 echo ""
 echo "Next steps:"
 echo ""
