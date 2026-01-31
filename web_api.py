@@ -530,19 +530,18 @@ def initialize_default_config():
     import logging
     logger = logging.getLogger(__name__)
     
-    # Add 5 copper LAN ports (eno2-eno8) - 1G, optimized mode
-    for i in range(2, 9):
+    # Add 5 copper LAN ports (eth1-eth5) - 1G, optimized mode
+    for i in range(1, 6):
         config = InterfaceConfig(
-            name=f"eno{i}",
+            name=f"eth{i}",
             mac_address=f"00:11:22:33:44:{i:02x}",
             interface_type=InterfaceType.COPPER_OPTIMIZED,
             speed_mbps=1000
         )
         engine.add_interface(config)
     
-    # Add 2 SFP 10G ports (sfp1-sfp2) - 10G, DPDK mode - DISABLED
-    if False:  # SFP ports disabled
-        for i in range(1, 3):
+    # Add 2 SFP 10G ports (sfp1-sfp2) - 10G, DPDK mode
+    for i in range(1, 3):
         config = InterfaceConfig(
             name=f"sfp{i}",
             mac_address=f"00:11:22:33:55:{i:02x}",
@@ -552,21 +551,20 @@ def initialize_default_config():
         engine.add_interface(config)
     
     logger.info(f"Initialized {len(engine.interfaces)} interfaces:")
-    logger.info(f"  - 7 copper ports (eno2-eno8): 1Gbps optimized mode")
-    # logger.info(f"  - 2 SFP ports (sfp1-sfp2): 10Gbps DPDK mode")  # Disabled
+    logger.info(f"  - 5 copper ports (eth1-eth5): 1Gbps optimized mode")
+    logger.info(f"  - 2 SFP ports (sfp1-sfp2): 10Gbps DPDK mode")
     
     # Try to initialize interfaces with network discovery
     try:
         # For copper ports, try DHCP discovery
-        for name in [f"eno{i}" for i in range(2, 9)]:
+        for name in [f"eth{i}" for i in range(1, 6)]:
             if name in engine.interfaces:
                 interface = engine.interfaces[name]
                 # In unified engine, interfaces are already initialized
                 logger.info(f"  {name}: ready")
         
         # For SFP ports, they're ready for traffic (no DHCP needed usually)
-        if False:  # SFP disabled
-            for name in [f"sfp{i}" for i in range(1, 3)]:
+        for name in [f"sfp{i}" for i in range(1, 3)]:
             if name in engine.interfaces:
                 logger.info(f"  {name}: ready (DPDK mode)")
                 
