@@ -856,6 +856,8 @@
             <button class="tab" data-tab="profiles">Traffic Profiles</button>
             <button class="tab" data-tab="statistics">Statistics</button>
             <button class="tab" data-tab="rfc2544">RFC2544 Testing</button>
+			<button class="tab" data-tab="advanced">⚡ Advanced Features</button>
+            <button class="tab" data-tab="ddos">🔥 DDoS Testing</button>
         </div>
         
         <div id="interfaces" class="tab-content active">
@@ -1703,5 +1705,7 @@
     </script>
     <script src="neighbor-discovery.js"></script>
     <script src="enhanced-features.js"></script>
+	echo '<script src="enhanced-features.js"></script>' | sudo tee -a web/index.html
+
 </body>
 </html>
