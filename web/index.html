@@ -1489,6 +1489,136 @@
             }
         }
         
+        // Edit profile function
+        async function editProfile(name) {
+            try {
+                // Fetch the current profile data
+                const response = await fetch(`${API_BASE}/traffic-profiles/${name}`);
+                const data = await response.json();
+                
+                if (!data.success || !data.profile) {
+                    showNotification('Failed to load profile data', 'error');
+                    return;
+                }
+                
+                const profile = data.profile;
+                
+                // Create edit modal
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.style.display = 'block';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 class="modal-title">Edit Profile: ${name}</h2>
+                            <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+                        </div>
+                        <form id="editProfileForm">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Profile Name</label>
+                                    <input type="text" class="form-input" value="${profile.name}" disabled>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Source Interface</label>
+                                    <select class="form-select" name="src_interface" required>
+                                        ${Object.keys(interfaces).map(iface => 
+                                            `<option value="${iface}" ${iface === profile.src_interface ? 'selected' : ''}>${iface}</option>`
+                                        ).join('')}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Destination Interface</label>
+                                    <select class="form-select" name="dst_interface" required>
+                                        ${Object.keys(interfaces).map(iface => 
+                                            `<option value="${iface}" ${iface === profile.dst_interface ? 'selected' : ''}>${iface}</option>`
+                                        ).join('')}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Destination IP</label>
+                                    <input type="text" class="form-input" name="dst_ip" value="${profile.dst_ip}" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Destination Port</label>
+                                    <input type="number" class="form-input" name="dst_port" value="${profile.dst_port || 0}">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Protocol</label>
+                                    <select class="form-select" name="protocol" required>
+                                        <option value="udp" ${profile.protocol === 'udp' ? 'selected' : ''}>UDP</option>
+                                        <option value="tcp" ${profile.protocol === 'tcp' ? 'selected' : ''}>TCP</option>
+                                        <option value="http" ${profile.protocol === 'http' ? 'selected' : ''}>HTTP</option>
+                                        <option value="dns" ${profile.protocol === 'dns' ? 'selected' : ''}>DNS</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Bandwidth (Mbps)</label>
+                                    <input type="number" class="form-input" name="bandwidth_mbps" value="${profile.bandwidth_mbps || 0}" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Packet Size (bytes)</label>
+                                    <input type="number" class="form-input" name="packet_size" value="${profile.packet_size || 1400}" min="64" max="9000">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Duration (seconds, 0=infinite)</label>
+                                    <input type="number" class="form-input" name="duration" value="${profile.duration || 0}" min="0">
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">SAVE CHANGES</button>
+                                <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').remove()">CANCEL</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // Handle form submission
+                document.getElementById('editProfileForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const formData = new FormData(e.target);
+                    const updates = {
+                        src_interface: formData.get('src_interface'),
+                        dst_interface: formData.get('dst_interface'),
+                        dst_ip: formData.get('dst_ip'),
+                        dst_port: parseInt(formData.get('dst_port')),
+                        protocol: formData.get('protocol'),
+                        bandwidth_mbps: parseInt(formData.get('bandwidth_mbps')),
+                        packet_size: parseInt(formData.get('packet_size')),
+                        duration: parseInt(formData.get('duration'))
+                    };
+                    
+                    try {
+                        const response = await fetch(`${API_BASE}/traffic-profiles/${name}`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(updates)
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            showNotification('Profile updated successfully', 'success');
+                            modal.remove();
+                            await loadProfiles();
+                        } else {
+                            showNotification(data.error || 'Failed to update profile', 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error updating profile:', error);
+                        showNotification('Failed to update profile', 'error');
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error editing profile:', error);
+                showNotification('Failed to load profile for editing', 'error');
+            }
+        }
+        
         // Handle add profile form
         async function handleAddProfile(e) {
             e.preventDefault();
@@ -1572,5 +1702,6 @@
         }
     </script>
     <script src="neighbor-discovery.js"></script>
+    <script src="enhanced-features.js"></script>
 </body>
 </html>
