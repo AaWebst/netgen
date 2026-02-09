@@ -9,14 +9,14 @@ QUICK INSTALLATION:
 ═══════════════════════════════════════════════════════════════
 
 1. Copy this directory to your VEP1445:
-   scp -r vep1445-production/ lab@192.168.2.51:/tmp/
+   scp -r vep1445-production/ user@your-server:/tmp/
 
 2. Run the installer:
    cd /tmp/vep1445-production
    sudo bash install_complete.sh
 
 3. Access the web GUI:
-   http://192.168.2.51:5000
+   http://YOUR_SERVER_IP:5000
 
 FEATURES:
 ═══════════════════════════════════════════════════════════════
@@ -106,12 +106,12 @@ After installation:
   • Ready to generate traffic
 
 Example:
-  eno2: 24.1.6.142/27
-  eno3: 24.1.1.139/27
+  eno2: 192.168.1.100/27
+  eno3: 192.168.1.200/27
   
   Auto-profiles created:
-    • Auto_eno2_to_eno3 (24.1.6.142 → 24.1.1.139)
-    • Auto_eno3_to_eno2 (24.1.1.139 → 24.1.6.142)
+    • Auto_eno2_to_eno3 (192.168.1.100 → 192.168.1.200)
+    • Auto_eno3_to_eno2 (192.168.1.200 → 192.168.1.100)
 
 TROUBLESHOOTING:
 ═══════════════════════════════════════════════════════════════

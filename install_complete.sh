@@ -77,21 +77,22 @@ echo " Step 3: Installing Core Files"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# Copy essential files only
-if [ -f "$SCRIPT_DIR/traffic_engine_unified.py" ]; then
-    cp "$SCRIPT_DIR/traffic_engine_unified.py" "$INSTALL_DIR/"
-    echo "  ✓ traffic_engine_unified.py"
-fi
+# Copy all Python modules
+for f in traffic_engine_unified.py web_api.py neighbor_discovery.py \
+         auto_config.py load_profiles_now.py; do
+    if [ -f "$SCRIPT_DIR/$f" ]; then
+        cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/"
+        echo "  ✓ $f"
+    fi
+done
 
-if [ -f "$SCRIPT_DIR/web_api.py" ]; then
-    cp "$SCRIPT_DIR/web_api.py" "$INSTALL_DIR/"
-    echo "  ✓ web_api.py"
-fi
-
-if [ -f "$SCRIPT_DIR/neighbor_discovery.py" ]; then
-    cp "$SCRIPT_DIR/neighbor_discovery.py" "$INSTALL_DIR/"
-    echo "  ✓ neighbor_discovery.py"
-fi
+# Copy sub-packages (monitoring, protocols, testing)
+for pkg in monitoring protocols testing; do
+    if [ -d "$SCRIPT_DIR/$pkg" ]; then
+        cp -r "$SCRIPT_DIR/$pkg" "$INSTALL_DIR/"
+        echo "  ✓ $pkg/"
+    fi
+done
 
 # Copy web files
 if [ -d "$SCRIPT_DIR/web" ]; then
@@ -248,168 +249,11 @@ echo ""
 # ═══════════════════════════════════════════════════════════════
 
 echo "═══════════════════════════════════════════════════════════════"
-echo " Step 6: Creating Auto-Configuration Module"
+echo " Step 6: Auto-Configuration Module"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-
-cat > "$INSTALL_DIR/auto_config.py" << 'PYEOF'
-#!/usr/bin/env python3
-"""
-VEP1445 Auto-Configuration Module
-Automatically detects IPs on interfaces and creates traffic profiles
-"""
-
-import subprocess
-import re
-import json
-import logging
-from typing import Dict, List
-
-logger = logging.getLogger(__name__)
-
-def get_interface_info(interface_name: str) -> Dict:
-    """Get MAC and IP address for interface"""
-    info = {
-        'name': interface_name,
-        'mac': '00:00:00:00:00:00',
-        'ip': None,
-        'netmask': None,
-        'network': None,
-        'has_ip': False
-    }
-    
-    try:
-        # Get MAC address
-        result = subprocess.run(['ip', 'link', 'show', interface_name],
-                              capture_output=True, text=True, timeout=2)
-        if result.returncode == 0:
-            mac_match = re.search(r'link/ether ([0-9a-f:]+)', result.stdout)
-            if mac_match:
-                info['mac'] = mac_match.group(1)
-        
-        # Get IP address
-        result = subprocess.run(['ip', '-4', 'addr', 'show', interface_name],
-                              capture_output=True, text=True, timeout=2)
-        if result.returncode == 0:
-            ip_match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)/(\d+)', result.stdout)
-            if ip_match:
-                info['ip'] = ip_match.group(1)
-                cidr = int(ip_match.group(2))
-                info['has_ip'] = True
-                
-                # Convert CIDR to netmask
-                mask = (0xffffffff >> (32 - cidr)) << (32 - cidr)
-                info['netmask'] = '.'.join([str((mask >> (24 - i*8)) & 0xff) for i in range(4)])
-                
-                # Calculate network address
-                ip_parts = [int(p) for p in info['ip'].split('.')]
-                mask_parts = [int(p) for p in info['netmask'].split('.')]
-                network_parts = [ip_parts[i] & mask_parts[i] for i in range(4)]
-                info['network'] = '.'.join([str(p) for p in network_parts]) + f'/{cidr}'
-    
-    except Exception as e:
-        logger.error(f"Error getting info for {interface_name}: {e}")
-    
-    return info
-
-def get_all_interfaces() -> List[Dict]:
-    """Get info for all VEP1445 interfaces"""
-    interfaces = []
-    for iface in ['eno2', 'eno3', 'eno4', 'eno5', 'eno6']:
-        try:
-            info = get_interface_info(iface)
-            interfaces.append(info)
-        except:
-            pass
-    return interfaces
-
-def generate_auto_profiles(interfaces: List[Dict]) -> List[Dict]:
-    """Generate traffic profiles between all networks with IPs"""
-    profiles = []
-    
-    # Get interfaces with IPs
-    active_interfaces = [iface for iface in interfaces if iface['has_ip']]
-    
-    if len(active_interfaces) < 2:
-        logger.warning("Not enough interfaces with IPs to create auto-profiles")
-        return profiles
-    
-    # Create bidirectional traffic profiles between each pair
-    for i, src in enumerate(active_interfaces):
-        for dst in active_interfaces[i+1:]:
-            # Forward profile
-            profiles.append({
-                'name': f'Auto_{src["name"]}_to_{dst["name"]}',
-                'description': f'Auto-generated: {src["network"]} -> {dst["network"]}',
-                'source_interface': src['name'],
-                'source_ip': src['ip'],
-                'dest_interface': dst['name'],
-                'dest_ip': dst['ip'],
-                'bandwidth_mbps': 100,
-                'packet_size': 1400,
-                'protocol': 'UDP',
-                'enabled': False
-            })
-            
-            # Reverse profile
-            profiles.append({
-                'name': f'Auto_{dst["name"]}_to_{src["name"]}',
-                'description': f'Auto-generated: {dst["network"]} -> {src["network"]}',
-                'source_interface': dst['name'],
-                'source_ip': dst['ip'],
-                'dest_interface': src['name'],
-                'dest_ip': src['ip'],
-                'bandwidth_mbps': 100,
-                'packet_size': 1400,
-                'protocol': 'UDP',
-                'enabled': False
-            })
-    
-    logger.info(f"Generated {len(profiles)} auto-profiles")
-    return profiles
-
-def save_auto_config(config_path: str = '/opt/vep1445-traffic-gen/auto_config.json'):
-    """Save auto-configuration"""
-    interfaces = get_all_interfaces()
-    profiles = generate_auto_profiles(interfaces)
-    
-    config = {
-        'auto_generated': True,
-        'interfaces': interfaces,
-        'auto_profiles': profiles
-    }
-    
-    try:
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to save auto-config: {e}")
-        return False
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
-    interfaces = get_all_interfaces()
-    
-    print("Detected Interfaces:")
-    for iface in interfaces:
-        if iface['has_ip']:
-            print(f"  {iface['name']}: {iface['ip']} ({iface['network']})")
-        else:
-            print(f"  {iface['name']}: No IP")
-    
-    profiles = generate_auto_profiles(interfaces)
-    if profiles:
-        print(f"\nGenerated {len(profiles)} auto-profiles")
-        for profile in profiles:
-            print(f"  {profile['name']}: {profile['source_ip']} -> {profile['dest_ip']}")
-    
-    if save_auto_config():
-        print("\n✓ Auto-configuration saved")
-PYEOF
-
-chmod +x "$INSTALL_DIR/auto_config.py"
-echo "  ✓ Auto-configuration module created"
+echo "  ✓ auto_config.py already installed in Step 3"
+echo "    (detects IPs, generates profiles, and POSTs them to the API)"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════
@@ -431,122 +275,14 @@ echo ""
 # ═══════════════════════════════════════════════════════════════
 
 echo "═══════════════════════════════════════════════════════════════"
-echo " Step 8: Integrating Auto-Profiles into Engine"
+echo " Step 8: Engine Integration"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-
-if [ -f "$INSTALL_DIR/web_api.py" ]; then
-    python3 << 'PYEOF'
-import re
-
-web_api_path = '/opt/vep1445-traffic-gen/web_api.py'
-
-with open(web_api_path, 'r') as f:
-    content = f.read()
-
-# Find what field names TrafficProfile actually uses
-if 'src_interface' in content and 'dst_interface' in content:
-    # Uses src_interface, dst_interface, dst_ip
-    field_mapping = {
-        'source': 'src',
-        'dest': 'dst',
-        'destination': 'dst'
-    }
-    print("  ℹ️  Detected API uses: src_interface, dst_interface, dst_ip")
-else:
-    # Uses source_interface, destination_interface
-    field_mapping = None
-    print("  ℹ️  Detected API uses: source_interface, destination_interface")
-
-# Complete initialize function with CORRECT field names
-new_init = '''def initialize_default_config():
-    """Initialize with DHCP-enabled interfaces and auto-load profiles"""
-    import logging
-    import sys
-    import json
-    logger = logging.getLogger(__name__)
-    
-    sys.path.insert(0, '/opt/vep1445-traffic-gen')
-    from auto_config import get_all_interfaces, generate_auto_profiles, save_auto_config
-    
-    # Get interfaces with real IPs from DHCP
-    interfaces = get_all_interfaces()
-    
-    interfaces_added = 0
-    for iface_info in interfaces:
-        try:
-            config = InterfaceConfig(
-                name=iface_info['name'],
-                mac_address=iface_info['mac'],
-                ip_address=iface_info.get('ip'),
-                subnet_mask=iface_info.get('netmask'),
-                interface_type=InterfaceType.COPPER_OPTIMIZED,
-                speed_mbps=1000
-            )
-            
-            engine.add_interface(config)
-            interfaces_added += 1
-            
-            if iface_info['has_ip']:
-                logger.info(f"Added {iface_info['name']}: MAC={iface_info['mac']}, IP={iface_info['ip']} (DHCP)")
-            else:
-                logger.info(f"Added {iface_info['name']}: MAC={iface_info['mac']}, IP=None")
-            
-        except Exception as e:
-            logger.error(f"Failed to add interface {iface_info['name']}: {e}")
-    
-    logger.info(f"Initialized {interfaces_added} interfaces")
-    
-    # Generate and LOAD auto-profiles
-    auto_profiles = generate_auto_profiles(interfaces)
-    if auto_profiles:
-        logger.info(f"Auto-generated {len(auto_profiles)} traffic profiles")
-        save_auto_config()
-        
-        # LOAD profiles into engine with CORRECT field names
-        profiles_loaded = 0
-        for p in auto_profiles:
-            try:
-                # CRITICAL: Use correct field names for TrafficProfile
-                profile = TrafficProfile(
-                    name=p['name'],
-                    src_interface=p['source_interface'],
-                    dst_interface=p['dest_interface'],
-                    dst_ip=p['dest_ip'],
-                    bandwidth_mbps=p['bandwidth_mbps'],
-                    packet_size=p['packet_size'],
-                    protocol=p['protocol']
-                )
-                
-                engine.add_traffic_profile(profile)
-                profiles_loaded += 1
-                
-                logger.info(f"  ✓ LOADED: {p['name']}: {p['source_ip']} -> {p['dest_ip']}")
-            except Exception as e:
-                logger.error(f"Failed to load {p['name']}: {e}")
-        
-        logger.info(f"✅ Loaded {profiles_loaded}/{len(auto_profiles)} profiles into engine")
-    else:
-        logger.warning("No auto-profiles generated (need 2+ interfaces with IPs)")
-'''
-
-# Replace the function
-pattern = r'def initialize_default_config\(\):.*?(?=\n(?:def |if __name__|app = Flask))'
-if re.search(pattern, content, re.DOTALL):
-    content = re.sub(pattern, new_init, content, flags=re.DOTALL)
-    
-    with open(web_api_path, 'w') as f:
-        f.write(content)
-    
-    print("  ✓ web_api.py FIXED with correct TrafficProfile field names!")
-else:
-    print("  ⚠️  Could not find initialize_default_config()")
-PYEOF
-    echo ""
-else
-    echo "  ⚠️  web_api.py not found"
-    echo ""
-fi
+echo "  ✓ web_api.py already discovers real IPs on startup via"
+echo "    refresh_all_interfaces() — no patching needed."
+echo "  ✓ Run 'python3 auto_config.py' after the server is up to"
+echo "    POST auto-profiles into the live engine."
+echo ""
 
 # ═══════════════════════════════════════════════════════════════
 # STEP 9: Create Systemd Service
@@ -567,9 +303,8 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStartPre=/bin/sleep 10
-ExecStartPre=$INSTALL_DIR/auto_config.py
 ExecStart=/usr/bin/python3 $INSTALL_DIR/web_api.py
+ExecStartPost=/bin/bash -c 'sleep 3 && python3 $INSTALL_DIR/auto_config.py'
 Restart=always
 RestartSec=10
 StandardOutput=journal

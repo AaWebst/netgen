@@ -10,6 +10,7 @@ Automatically detects IPs and creates multiple traffic profile types:
 import subprocess
 import re
 import json
+import os
 import logging
 from typing import Dict, List
 
@@ -171,8 +172,10 @@ def generate_auto_profiles(interfaces: List[Dict], profile_types: List[str] = No
     logger.info(f"Generated {len(profiles)} auto-profiles ({len(profile_types)} types × {len(active_interfaces)*(len(active_interfaces)-1)} directions)")
     return profiles
 
-def save_auto_config(config_path: str = '/opt/vep1445-traffic-gen/auto_config.json'):
+def save_auto_config(config_path: str = None):
     """Save auto-configuration"""
+    if config_path is None:
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'auto_config.json')
     interfaces = get_all_interfaces()
     
     # Generate all profile types
@@ -194,32 +197,105 @@ def save_auto_config(config_path: str = '/opt/vep1445-traffic-gen/auto_config.js
         return False
 
 if __name__ == '__main__':
+    import sys
     logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+    # optional: pull in requests only if we are going to POST
+    try:
+        import requests as _req
+        HAS_REQUESTS = True
+    except ImportError:
+        HAS_REQUESTS = False
+
     interfaces = get_all_interfaces()
-    
+
+    print("=" * 63)
+    print("  VEP1445 Auto-Config  --  Detect / Save / Load")
+    print("=" * 63)
+    print()
     print("Detected Interfaces:")
     for iface in interfaces:
         if iface['has_ip']:
             print(f"  {iface['name']}: {iface['ip']} ({iface['network']})")
         else:
             print(f"  {iface['name']}: No IP")
-    
+
     profiles = generate_auto_profiles(interfaces, profile_types=['udp', 'tcp', 'voice', 'video'])
-    if profiles:
-        print(f"\nGenerated {len(profiles)} auto-profiles:")
-        
-        # Group by type
-        by_type = {}
-        for p in profiles:
-            ptype = p['name'].split('_')[-1]
-            by_type.setdefault(ptype, []).append(p)
-        
-        for ptype, plist in sorted(by_type.items()):
-            print(f"\n  {ptype} profiles ({len(plist)}):")
-            for p in plist[:4]:  # Show first 4
-                print(f"    {p['name']}: {p['source_ip']} → {p['dest_ip']} ({p['bandwidth_mbps']} Mbps, DSCP {p.get('dscp', 0)})")
-            if len(plist) > 4:
-                print(f"    ... and {len(plist)-4} more")
-    
+
+    if not profiles:
+        print("\n[!] No profiles generated -- need at least 2 interfaces with IPs.")
+        sys.exit(1)
+
+    # -- print summary --
+    print(f"\nGenerated {len(profiles)} auto-profiles:")
+    by_type = {}
+    for p in profiles:
+        ptype = p['name'].split('_')[-1]
+        by_type.setdefault(ptype, []).append(p)
+    for ptype, plist in sorted(by_type.items()):
+        print(f"\n  {ptype} profiles ({len(plist)}):")
+        for p in plist[:4]:
+            print(f"    {p['name']}: {p['source_ip']} -> {p['dest_ip']} ({p['bandwidth_mbps']} Mbps, DSCP {p.get('dscp', 0)})")
+        if len(plist) > 4:
+            print(f"    ... and {len(plist)-4} more")
+
+    # -- step 1: save JSON next to this script --
     if save_auto_config():
-        print("\n✓ Auto-configuration saved")
+        print("\n[ok] auto_config.json saved")
+    else:
+        print("\n[!!] Failed to save auto_config.json")
+
+    # -- step 2: POST every profile into the live API --
+    if not HAS_REQUESTS:
+        print("\n[!] 'requests' not installed -- skipping API load.")
+        print("    Install:  pip3 install requests --break-system-packages")
+        sys.exit(0)
+
+    API_URL = "http://localhost:5000/api/traffic-profiles"
+
+    # quick connectivity check
+    try:
+        _req.get("http://localhost:5000/api/system/status", timeout=2)
+    except Exception:
+        print("\n[!!] Cannot reach http://localhost:5000 -- is web_api.py running?")
+        print("     Start it:  sudo python3 web_api.py")
+        sys.exit(1)
+
+    print(f"\nLoading {len(profiles)} profiles into the running instance...")
+    success = 0
+    failed  = 0
+
+    for p in profiles:
+        # Map auto_config field names -> API field names
+        payload = {
+            'name':            p['name'],
+            'src_interface':   p['source_interface'],
+            'dst_interface':   p['dest_interface'],
+            'dst_ip':          p['dest_ip'],
+            'bandwidth_mbps':  p['bandwidth_mbps'],
+            'packet_size':     p['packet_size'],
+            'protocol':        p['protocol'],
+            'dscp':            p.get('dscp', 0),
+            'enabled':         False
+        }
+        try:
+            r = _req.post(API_URL, json=payload, timeout=5)
+            result = r.json()
+            if r.status_code in (200, 201) and result.get('success'):
+                print(f"  [ok] {p['name']}")
+                success += 1
+            else:
+                print(f"  [!!] {p['name']} -- {result.get('error', r.text[:80])}")
+                failed += 1
+        except Exception as e:
+            print(f"  [!!] {p['name']} -- {e}")
+            failed += 1
+
+    print()
+    print("-" * 63)
+    print(f"  Results: {success} loaded, {failed} failed")
+    if success:
+        print("\n  Refresh http://localhost:5000  -->  Traffic Profiles tab")
+    else:
+        print("\n  No profiles were loaded into the API")
+    sys.exit(0 if success else 1)

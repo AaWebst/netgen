@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+*.out
+
+# Backups
+*.backup
+*.bak
+*.old
+
+# Runtime files
+vep1445_runtime_config.json
+*.pid
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local configuration (if you have sensitive data)
+local_config.json
+secrets.json
+
+# Compiled files
+*.pyc
+*.pyo

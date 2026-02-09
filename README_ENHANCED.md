@@ -162,8 +162,8 @@ curl -X POST http://localhost:5000/api/bgp/stop
 curl -X POST http://localhost:5000/api/qos/test \
   -H "Content-Type: application/json" \
   -d '{
-    "src_ip": "24.1.6.142",
-    "dst_ip": "24.1.1.139",
+    "src_ip": "192.168.1.100",
+    "dst_ip": "192.168.1.200",
     "duration": 60,
     "scenario": "voice_video_data"
   }'

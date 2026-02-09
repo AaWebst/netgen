@@ -999,11 +999,11 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label class="form-label">Source IP</label>
-                            <input type="text" id="qos_src" class="form-input" placeholder="24.1.6.142">
+                            <input type="text" id="qos_src" class="form-input" placeholder="192.168.1.100">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Destination IP</label>
-                            <input type="text" id="qos_dst" class="form-input" placeholder="24.1.1.139">
+                            <input type="text" id="qos_dst" class="form-input" placeholder="192.168.1.200">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Test Scenario</label>
@@ -1080,7 +1080,7 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Target IP Address</label>
-                            <input type="text" id="ddos_target_ip" class="form-input" placeholder="24.1.1.139">
+                            <input type="text" id="ddos_target_ip" class="form-input" placeholder="192.168.1.200">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Target Port</label>
@@ -1305,6 +1305,16 @@
                     
                     tab.classList.add('active');
                     document.getElementById(tabName).classList.add('active');
+
+                    // reload fresh data when landing on these tabs
+                    if (tabName === 'interfaces') {
+                        loadInterfaces();
+                        populateInterfaceDropdowns();
+                    } else if (tabName === 'profiles') {
+                        loadProfiles();
+                    } else if (tabName === 'statistics') {
+                        loadSystemStatus();
+                    }
                 });
             });
         }
@@ -1313,7 +1323,10 @@
         function setupEventListeners() {
             document.getElementById('btnStartTraffic').addEventListener('click', startTraffic);
             document.getElementById('btnStopTraffic').addEventListener('click', stopTraffic);
-            document.getElementById('btnRefresh').addEventListener('click', loadData);
+            document.getElementById('btnRefresh').addEventListener('click', () => {
+                loadData();
+                populateInterfaceDropdowns();
+            });
             document.getElementById('btnSaveConfig').addEventListener('click', saveConfig);
             document.getElementById('btnAddProfile').addEventListener('click', () => {
                 document.getElementById('addProfileModal').style.display = 'block';
@@ -1773,10 +1786,6 @@
                                     <input type="text" class="form-input" name="dst_ip" value="${profile.dst_ip}" required>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Destination Port</label>
-                                    <input type="number" class="form-input" name="dst_port" value="${profile.dst_port || 0}">
-                                </div>
-                                <div class="form-group">
                                     <label class="form-label">Protocol</label>
                                     <select class="form-select" name="protocol" required>
                                         <option value="udp" ${profile.protocol === 'udp' ? 'selected' : ''}>UDP</option>
@@ -1794,8 +1803,8 @@
                                     <input type="number" class="form-input" name="packet_size" value="${profile.packet_size || 1400}" min="64" max="9000">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Duration (seconds, 0=infinite)</label>
-                                    <input type="number" class="form-input" name="duration" value="${profile.duration || 0}" min="0">
+                                    <label class="form-label">DSCP / QoS</label>
+                                    <input type="number" class="form-input" name="dscp" value="${profile.dscp || 0}" min="0" max="63">
                                 </div>
                             </div>
                             <div class="form-actions">
@@ -1817,11 +1826,10 @@
                         src_interface: formData.get('src_interface'),
                         dst_interface: formData.get('dst_interface'),
                         dst_ip: formData.get('dst_ip'),
-                        dst_port: parseInt(formData.get('dst_port')),
                         protocol: formData.get('protocol'),
                         bandwidth_mbps: parseInt(formData.get('bandwidth_mbps')),
                         packet_size: parseInt(formData.get('packet_size')),
-                        duration: parseInt(formData.get('duration'))
+                        dscp: parseInt(formData.get('dscp'))
                     };
                     
                     try {

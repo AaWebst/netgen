@@ -13,9 +13,13 @@ print("║  Loading Auto-Profiles into VEP1445 (Corrected)              ║")
 print("╚═══════════════════════════════════════════════════════════════╝")
 print("")
 
-# Read auto_config.json
+# Read auto_config.json from the same directory as this script
+import os
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_config_path = os.path.join(_this_dir, 'auto_config.json')
+
 try:
-    with open('/opt/vep1445-traffic-gen/auto_config.json', 'r') as f:
+    with open(_config_path, 'r') as f:
         config = json.load(f)
 except FileNotFoundError:
     print("❌ Error: auto_config.json not found!")

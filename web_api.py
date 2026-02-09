@@ -10,9 +10,12 @@ from flask_cors import CORS
 import json
 import threading
 import time
+import logging
 from typing import Dict, List
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 # Import the unified traffic engine
 from traffic_engine_unified import (
@@ -77,6 +80,7 @@ def index():
 def get_interfaces():
     """Get all network interfaces and their status"""
     with engine_lock:
+        refresh_all_interfaces()          # pull real MAC/IP from OS every time
         interfaces = engine.get_interface_status()
         return jsonify({
             'success': True,
@@ -167,16 +171,23 @@ def rediscover_interface(interface_name):
                     'success': False,
                     'error': 'Interface not found'
                 }), 404
-                
-            interface = engine.interfaces[interface_name]
-            interface.initialize(use_dhcp=True, use_arp_discovery=True)
-            
+
+            # Pull real MAC/IP/mask from OS and update engine config
+            live = discover_live_info(interface_name)
+            iface = engine.interfaces[interface_name]
+            if live['mac']:
+                iface.config.mac_address = live['mac']
+            if live['ip']:
+                iface.config.ip_address = live['ip']
+            if live['netmask']:
+                iface.config.subnet_mask = live['netmask']
+
         return jsonify({
             'success': True,
             'message': 'Discovery completed',
             'interface': engine.get_interface_status()[interface_name]
         })
-        
+
     except Exception as e:
         return jsonify({
             'success': False,
@@ -258,6 +269,43 @@ def add_traffic_profile():
         }), 400
 
 
+@app.route('/api/traffic-profiles/<profile_name>', methods=['GET'])
+def get_traffic_profile(profile_name):
+    """Get a single traffic profile by name"""
+    with engine_lock:
+        if profile_name not in engine.traffic_profiles:
+            return jsonify({
+                'success': False,
+                'error': 'Profile not found'
+            }), 404
+
+        p = engine.traffic_profiles[profile_name]
+        profile_data = {
+            'name': p.name,
+            'src_interface': p.src_interface,
+            'dst_interface': p.dst_interface,
+            'dst_ip': p.dst_ip,
+            'bandwidth_mbps': p.bandwidth_mbps,
+            'packet_size': p.packet_size,
+            'protocol': p.protocol,
+            'enabled': p.enabled,
+            'dscp': p.dscp,
+            'latency_ms': p.latency_ms,
+            'jitter_ms': p.jitter_ms,
+            'packet_loss_percent': p.packet_loss_percent,
+            'vlan_outer': p.vlan_outer,
+            'vlan_inner': p.vlan_inner,
+            'vni': p.vni,
+            'mpls_label': p.mpls_label,
+            'rfc2544_enabled': p.rfc2544_enabled
+        }
+
+    return jsonify({
+        'success': True,
+        'profile': profile_data
+    })
+
+
 @app.route('/api/traffic-profiles/<profile_name>', methods=['PUT'])
 def update_traffic_profile(profile_name):
     """Update an existing traffic profile"""
@@ -274,6 +322,12 @@ def update_traffic_profile(profile_name):
             profile = engine.traffic_profiles[profile_name]
             
             # Update fields
+            if 'src_interface' in data:
+                profile.src_interface = data['src_interface']
+            if 'dst_interface' in data:
+                profile.dst_interface = data['dst_interface']
+            if 'protocol' in data:
+                profile.protocol = data['protocol']
             if 'bandwidth_mbps' in data:
                 profile.bandwidth_mbps = float(data['bandwidth_mbps'])
             if 'packet_size' in data:
@@ -557,6 +611,45 @@ def get_system_status():
     })
 
 
+def discover_live_info(iface_name: str) -> dict:
+    """Query the OS for the real MAC, IP, and subnet mask of an interface.
+    Returns a dict with keys: mac, ip, netmask  (any may be None)."""
+    import subprocess, re
+    info = {'mac': None, 'ip': None, 'netmask': None}
+    try:
+        # MAC
+        out = subprocess.run(['ip', 'link', 'show', iface_name],
+                             capture_output=True, text=True, timeout=3).stdout
+        m = re.search(r'link/ether\s+([0-9a-f:]+)', out)
+        if m:
+            info['mac'] = m.group(1)
+
+        # IP + CIDR
+        out = subprocess.run(['ip', '-4', 'addr', 'show', iface_name],
+                             capture_output=True, text=True, timeout=3).stdout
+        m = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)/(\d+)', out)
+        if m:
+            info['ip'] = m.group(1)
+            cidr = int(m.group(2))
+            mask_int = (0xffffffff >> (32 - cidr)) << (32 - cidr)
+            info['netmask'] = '.'.join(str((mask_int >> (24 - i*8)) & 0xff) for i in range(4))
+    except Exception as e:
+        logger.warning(f"discover_live_info({iface_name}): {e}")
+    return info
+
+
+def refresh_all_interfaces():
+    """Re-discover every interface's MAC/IP from the OS and push into engine config."""
+    for name, iface in engine.interfaces.items():
+        live = discover_live_info(name)
+        if live['mac']:
+            iface.config.mac_address = live['mac']
+        if live['ip']:
+            iface.config.ip_address = live['ip']
+        if live['netmask']:
+            iface.config.subnet_mask = live['netmask']
+
+
 def initialize_default_config():
     """Initialize with default configuration: 5 copper LANs + 2 SFP 10G ports"""
     
@@ -573,16 +666,9 @@ def initialize_default_config():
         )
         engine.add_interface(config)
     
-    # Add 2 SFP 10G ports (sfp1-sfp2) - DISABLED (not present)
-    if False:  # SFP ports disabled
-        for i in range(1, 3):
-        config = InterfaceConfig(
-            name=f"sfp{i}",
-            mac_address=f"00:11:22:33:55:{i:02x}",
-            interface_type=InterfaceType.SFP_10G_DPDK,
-            speed_mbps=10000
-        )
-        engine.add_interface(config)
+    # SFP 10G ports (sfp1-sfp2) — not present on this hardware, disabled
+    if False:  # pragma: no cover
+        pass
     
     logger.info(f"Initialized {len(engine.interfaces)} interfaces:")
     logger.info(f"  - 7 copper ports (eno2-eno8): 1Gbps optimized mode")
@@ -597,15 +683,16 @@ def initialize_default_config():
                 # In unified engine, interfaces are already initialized
                 logger.info(f"  {name}: ready")
         
-        # For SFP ports, they're ready for traffic (no DHCP needed usually)
-        if False:  # SFP disabled
-            for name in [f"sfp{i}" for i in range(1, 3)]:
-            if name in engine.interfaces:
-                logger.info(f"  {name}: ready (DPDK mode)")
+        # SFP ports disabled — not present on this hardware
+        if False:  # pragma: no cover
+            pass
                 
     except Exception as e:
         logger.warning(f"Could not fully initialize interfaces: {e}")
         logger.info("This is normal if running outside actual hardware environment")
+
+    # Overwrite placeholder MACs/IPs with real values from the OS
+    refresh_all_interfaces()
 
 
 @app.route('/api/neighbors/discover', methods=['POST'])

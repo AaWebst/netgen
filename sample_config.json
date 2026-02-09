@@ -13,9 +13,9 @@
     "eth2": {
       "name": "eth2",
       "mac_address": "00:11:22:33:44:02",
-      "ip_address": "192.168.2.10",
+      "ip_address": "192.168.1.10",
       "subnet_mask": "255.255.255.0",
-      "gateway": "192.168.2.1",
+      "gateway": "192.168.1.1",
       "vlan_id": null,
       "ipv6_address": null,
       "discovered_hosts": []
@@ -56,7 +56,7 @@
       "name": "LAN1_to_LAN2_VoIP",
       "src_interface": "eth1",
       "dst_interface": "eth2",
-      "dst_ip": "192.168.2.100",
+      "dst_ip": "192.168.1.100",
       "bandwidth_mbps": 10.0,
       "packet_size": 160,
       "protocol": "ipv4",
